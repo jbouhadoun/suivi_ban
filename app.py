@@ -19,11 +19,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# URL de l'API (à adapter si besoin)
-# En K8s, l'API est exposée via le même Ingress sur /api
-# En local, utiliser localhost:8000
+# URL de l'API
+# En K8s : "" (URL relative via Ingress)
+# En local : "http://localhost:8000"
 import os
-API_URL = os.getenv("API_URL", "")
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # HTML complet de l'application
 app_html = f"""
@@ -51,7 +51,7 @@ app_html = f"""
         /* === SIDEBAR === */
         .sidebar {{
             width: 380px;
-            background: white;
+            background: white; 
             border-right: 1px solid #e0e0e0;
             display: flex;
             flex-direction: column;
@@ -472,9 +472,9 @@ app_html = f"""
                 <div class="stat">
                     <div class="stat-value" id="statVoies">-</div>
                     <div class="stat-label">Voies</div>
-                </div>
-            </div>
-            
+        </div>
+    </div>
+    
             <div class="search-box" style="position: relative;">
                 <input type="text" class="search-input" id="searchInput" placeholder="Nom ou code INSEE...">
                 <div class="search-results" id="searchResults"></div>
@@ -486,32 +486,32 @@ app_html = f"""
                     <select class="select" id="producteurSelect">
                         <option value="">Tous les producteurs</option>
                     </select>
-                </div>
+            </div>
                 
                 <div class="filter-title" style="margin-top: 16px;">Statuts</div>
                 <div class="status-chips">
                     <div class="chip chip-vert active" data-status="vert" onclick="toggleStatus('vert')" title="BAL nouveau socle">
                         <span class="chip-dot"></span> Nouveau
-                    </div>
+            </div>
                     <div class="chip chip-orange active" data-status="orange" onclick="toggleStatus('orange')" title="BAL ancien socle avec identifiant">
                         <span class="chip-dot"></span> Ancien+ID
-                    </div>
+            </div>
                     <div class="chip chip-rouge active" data-status="rouge" onclick="toggleStatus('rouge')" title="BAL ancien socle sans identifiant">
                         <span class="chip-dot"></span> Ancien
-                    </div>
+            </div>
                     <div class="chip chip-jaune active" data-status="jaune" onclick="toggleStatus('jaune')" title="Assemblage">
                         <span class="chip-dot"></span> Assemblage
-                    </div>
+            </div>
                     <div class="chip chip-gris active" data-status="gris" onclick="toggleStatus('gris')" title="Pas de données">
                         <span class="chip-dot"></span> Vide
-                    </div>
-                </div>
-                
+        </div>
+        </div>
+        
                 <div class="btn-group">
-                    <button class="btn btn-secondary" onclick="resetFilters()">Réinitialiser</button>
-                </div>
-            </div>
-            
+            <button class="btn btn-secondary" onclick="resetFilters()">Réinitialiser</button>
+        </div>
+    </div>
+    
             <div class="breadcrumb" id="breadcrumb">
                 <span class="bc-current">🇫🇷 France</span>
             </div>
@@ -739,8 +739,8 @@ app_html = f"""
                 if ((stats[s] || 0) > max) {{
                     max = stats[s];
                     dominant = s;
-                }}
-            }});
+                    }}
+                }});
             return dominant;
         }}
         
@@ -761,30 +761,49 @@ app_html = f"""
             selectedDept = code;
             currentView = 'departement';
             
-            // Update breadcrumb
-            document.getElementById('breadcrumb').innerHTML = `
-                <span class="bc-item" onclick="backToFrance()">🇫🇷 France</span>
-                <span class="bc-sep">›</span>
-                <span class="bc-current">${{nom}} (${{code}})</span>
-            `;
+            // Restaurer le sidebar original si nécessaire
+            if (window._originalSidebarContent) {{
+                document.querySelector('.sidebar').innerHTML = window._originalSidebarContent;
+                window._originalSidebarContent = null;
+                // Réattacher les events
+                document.getElementById('producteurSelect').addEventListener('change', onProducteurChange);
+                document.getElementById('searchInput').addEventListener('input', onSearch);
+            }}
             
-            // Show loading
-            document.getElementById('infoPanel').innerHTML = `
-                <div class="loading"><div class="spinner"></div> Chargement des communes...</div>
-            `;
+            // Update breadcrumb (si existe)
+            const breadcrumb = document.getElementById('breadcrumb');
+            if (breadcrumb) {{
+                breadcrumb.innerHTML = `
+                    <span class="bc-item" onclick="backToFrance()">🇫🇷 France</span>
+                    <span class="bc-sep">›</span>
+                    <span class="bc-current">${{nom || 'Département'}} (${{code}})</span>
+                `;
+            }}
+            
+            // Show loading (si existe)
+            const infoPanel = document.getElementById('infoPanel');
+            if (infoPanel) {{
+                infoPanel.innerHTML = `
+                    <div class="loading"><div class="spinner"></div> Chargement des communes...</div>
+                `;
+            }}
             
             // Zoom to dept
             const deptFeature = departementsData.features.find(f => f.properties.code === code);
             if (deptFeature) {{
                 const layer = L.geoJSON(deptFeature);
                 map.fitBounds(layer.getBounds(), {{ padding: [50, 50] }});
+                // Récupérer le nom du département si pas fourni
+                if (!nom) {{
+                    nom = deptFeature.properties.nom || departementsStats[code]?.nom || '';
+                }}
             }}
             
             // Load communes
             const communesData = await fetchAPI(`/api/departement/${{code}}/communes`);
             if (communesData) {{
                 showCommunes(communesData);
-                showDeptInfo(code, nom, communesData);
+                showDeptInfo(code, nom || 'Département ' + code, communesData);
             }}
         }}
         
@@ -844,71 +863,126 @@ app_html = f"""
             
             const filteredCount = filteredCommunes.length;
             
-            let html = `
-                <div style="background:#000091; color:white; padding:10px 14px; border-radius:8px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-weight:600; font-size:14px;">📍 ${{nom}} (${{code}})</span>
-                    <button onclick="backToFrance()" style="background:white; color:#000091; border:none; padding:5px 10px; border-radius:5px; font-weight:600; cursor:pointer; font-size:11px;">
-                        ← France
-                    </button>
-                </div>
-                
-                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px;">
-                    <div style="background:#e8f5e9; padding:8px; border-radius:6px; text-align:center;">
-                        <div style="font-size:16px; font-weight:700; color:#2e7d32;">${{stats.vert}}</div>
-                        <div style="font-size:9px; color:#2e7d32;">Nouveau</div>
-                    </div>
-                    <div style="background:#fff3e0; padding:8px; border-radius:6px; text-align:center;">
-                        <div style="font-size:16px; font-weight:700; color:#e65100;">${{stats.orange}}</div>
-                        <div style="font-size:9px; color:#e65100;">Ancien+ID</div>
-                    </div>
-                    <div style="background:#ffebee; padding:8px; border-radius:6px; text-align:center;">
-                        <div style="font-size:16px; font-weight:700; color:#c62828;">${{stats.rouge}}</div>
-                        <div style="font-size:9px; color:#c62828;">Ancien</div>
-                    </div>
-                    <div style="background:#fffde7; padding:8px; border-radius:6px; text-align:center;">
-                        <div style="font-size:16px; font-weight:700; color:#f9a825;">${{stats.jaune}}</div>
-                        <div style="font-size:9px; color:#f9a825;">Assemblage</div>
-                    </div>
-                    <div style="background:#f5f5f5; padding:8px; border-radius:6px; text-align:center;">
-                        <div style="font-size:16px; font-weight:700; color:#616161;">${{stats.gris}}</div>
-                        <div style="font-size:9px; color:#616161;">Vide</div>
-                    </div>
-                    <div style="background:#e3f2fd; padding:8px; border-radius:6px; text-align:center;">
-                        <div style="font-size:16px; font-weight:700; color:#1565c0;">${{total}}</div>
-                        <div style="font-size:9px; color:#1565c0;">Total</div>
-                    </div>
-                </div>
-                
-                <div class="card" style="padding:12px;">
-                    <h3 style="font-size:13px; margin-bottom:8px;">📍 Communes ${{filteredCount !== total ? '(' + filteredCount + '/' + total + ')' : '(' + total + ')'}}</h3>
-                    <div class="communes-list" style="max-height:400px;">
-            `;
-            
-            // Sort by population desc, limit to 100
+            // Sort by population desc
             const sorted = filteredCommunes
-                .sort((a, b) => (b.population || 0) - (a.population || 0))
-                .slice(0, 100);
+                .sort((a, b) => (b.population || 0) - (a.population || 0));
             
+            // Remplacer tout le panneau par un affichage pleine page
+            const sidebar = document.querySelector('.sidebar');
+            const originalContent = sidebar.innerHTML;
+            
+            let communesHtml = '';
             if (sorted.length === 0) {{
-                html += `<p style="color:#999; text-align:center; padding:15px; font-size:12px;">Aucune commune avec les filtres actuels</p>`;
+                communesHtml = `<p style="color:#999; text-align:center; padding:30px; font-size:13px;">Aucune commune avec les filtres actuels</p>`;
             }} else {{
                 sorted.forEach(c => {{
-                    html += `
-                        <div class="commune-item" onclick="goToCommune('${{c.code}}')" style="padding:6px 8px;">
-                            <span class="commune-dot" style="background:${{COLORS[c.statut] || COLORS.gris}}; width:8px; height:8px;"></span>
-                            <span class="commune-name" style="font-size:12px;">${{c.nom}}</span>
-                            <span class="commune-pop" style="font-size:10px;">${{c.population ? c.population.toLocaleString() : ''}}</span>
+                    communesHtml += `
+                        <div class="commune-item" onclick="goToCommune('${{c.code}}')" style="padding:10px 12px; border-bottom: 1px solid #f0f0f0;">
+                            <span class="commune-dot" style="background:${{COLORS[c.statut] || COLORS.gris}}"></span>
+                            <div style="flex:1;">
+                                <div class="commune-name">${{c.nom}}</div>
+                                <div style="font-size:11px; color:#888;">${{c.code}}</div>
+                            </div>
                         </div>
                     `;
                 }});
             }}
             
-            html += `
+            sidebar.innerHTML = `
+                <!-- Header département -->
+                <div style="background: linear-gradient(135deg, #000091 0%, #1212ff 100%); padding:16px; color:white;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <h2 style="font-size:18px; font-weight:700; margin:0;">📍 ${{nom}}</h2>
+                        <button onclick="restoreSidebar()" style="background:rgba(255,255,255,0.2); color:white; border:none; padding:8px 14px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px;">
+                            ← France
+                        </button>
+                </div>
+                    <div style="font-size:13px; opacity:0.9;">Département ${{code}} • ${{total}} communes</div>
+                </div>
+                
+                <!-- Stats compactes (cliquables pour filtrer) -->
+                <div style="display:flex; padding:12px; gap:8px; background:#fafafa; border-bottom:1px solid #e0e0e0; overflow-x:auto;">
+                    <div class="dept-filter-chip" data-status="vert" onclick="toggleDeptStatus('vert', '${{code}}', '${{nom}}')" style="background:#e8f5e9; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('vert') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('vert') ? '#2e7d32' : 'transparent'}};">
+                        <span style="font-weight:700; color:#2e7d32;">${{stats.vert}}</span>
+                        <span style="font-size:11px; color:#2e7d32; margin-left:4px;">Nouveau</span>
                     </div>
+                    <div class="dept-filter-chip" data-status="orange" onclick="toggleDeptStatus('orange', '${{code}}', '${{nom}}')" style="background:#fff3e0; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('orange') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('orange') ? '#e65100' : 'transparent'}};">
+                        <span style="font-weight:700; color:#e65100;">${{stats.orange}}</span>
+                        <span style="font-size:11px; color:#e65100; margin-left:4px;">Ancien+ID</span>
+                    </div>
+                    <div class="dept-filter-chip" data-status="rouge" onclick="toggleDeptStatus('rouge', '${{code}}', '${{nom}}')" style="background:#ffebee; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('rouge') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('rouge') ? '#c62828' : 'transparent'}};">
+                        <span style="font-weight:700; color:#c62828;">${{stats.rouge}}</span>
+                        <span style="font-size:11px; color:#c62828; margin-left:4px;">Ancien</span>
+                    </div>
+                    <div class="dept-filter-chip" data-status="jaune" onclick="toggleDeptStatus('jaune', '${{code}}', '${{nom}}')" style="background:#fffde7; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('jaune') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('jaune') ? '#f9a825' : 'transparent'}};">
+                        <span style="font-weight:700; color:#f9a825;">${{stats.jaune}}</span>
+                        <span style="font-size:11px; color:#f9a825; margin-left:4px;">Assemblage</span>
+                    </div>
+                    <div class="dept-filter-chip" data-status="gris" onclick="toggleDeptStatus('gris', '${{code}}', '${{nom}}')" style="background:#f5f5f5; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('gris') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('gris') ? '#616161' : 'transparent'}};">
+                        <span style="font-weight:700; color:#616161;">${{stats.gris}}</span>
+                        <span style="font-size:11px; color:#616161; margin-left:4px;">Vide</span>
+                    </div>
+                </div>
+                
+                <!-- Recherche dans le département -->
+                <div style="padding:12px 16px; background:white; border-bottom:1px solid #e0e0e0;">
+                    <input type="text" id="deptSearchInput" placeholder="🔍 Rechercher une commune..." 
+                        style="width:100%; padding:10px 14px; border:2px solid #e0e0e0; border-radius:8px; font-size:13px;"
+                        oninput="filterDeptCommunes(this.value, '${{code}}', '${{nom}}')"
+                    />
+                </div>
+                
+                <!-- Filtre producteur -->
+                <div style="padding:8px 16px; background:#fafafa; border-bottom:1px solid #e0e0e0;">
+                    <select id="deptProducteurSelect" onchange="filterByProducteur(this.value, '${{code}}', '${{nom}}')"
+                        style="width:100%; padding:8px 12px; border:2px solid #e0e0e0; border-radius:8px; font-size:12px; background:white;">
+                        <option value="">👤 Tous les producteurs</option>
+                    </select>
+                </div>
+                
+                <!-- Titre liste communes -->
+                <div style="padding:10px 16px; background:white; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-weight:600; color:#1a1a1a; font-size:13px;">
+                        📋 Communes ${{filteredCount !== total ? '(' + filteredCount + '/' + total + ')' : '(' + total + ')'}}
+                    </span>
+                    <span style="font-size:11px; color:#666;">Cliquez pour zoomer</span>
+                </div>
+                
+                <!-- Liste des communes (scroll) -->
+                <div id="communesList" style="flex:1; overflow-y:auto; background:#fff;">
+                    ${{communesHtml}}
                 </div>
             `;
             
-            document.getElementById('infoPanel').innerHTML = html;
+            // Stocker les communes pour le filtre
+            window._currentDeptCommunes = sorted;
+            
+            // Remplir le select producteurs avec les producteurs du département
+            setTimeout(() => {{
+                const producteursInDept = [...new Set(sorted.filter(c => c.producteur).map(c => c.producteur))].sort();
+                const select = document.getElementById('deptProducteurSelect');
+                if (select) {{
+                    producteursInDept.forEach(p => {{
+                        const opt = document.createElement('option');
+                        opt.value = p;
+                        opt.textContent = p;
+                        select.appendChild(opt);
+                    }});
+                }}
+            }}, 100);
+            
+            // Stocker le contenu original pour restauration
+            window._originalSidebarContent = originalContent;
+        }}
+        
+        function restoreSidebar() {{
+            if (window._originalSidebarContent) {{
+                document.querySelector('.sidebar').innerHTML = window._originalSidebarContent;
+                // Réattacher les events
+                document.getElementById('producteurSelect').addEventListener('change', onProducteurChange);
+                document.getElementById('searchInput').addEventListener('input', onSearch);
+            }}
+            backToFrance();
         }}
         
         function showCommuneInfo(props) {{
@@ -921,71 +995,83 @@ app_html = f"""
                 gris: 'Pas de données'
             }};
             
-            document.getElementById('infoPanel').innerHTML = `
-                <div style="display:flex; gap:8px; margin-bottom:12px;">
-                    <button onclick="backToFrance()" style="flex:1; background:#e0e0e0; color:#1a1a1a; border:none; padding:10px; border-radius:8px; font-weight:600; cursor:pointer; font-size:12px;">
+            const sidebar = document.querySelector('.sidebar');
+            
+            sidebar.innerHTML = `
+                <!-- Header commune -->
+                <div style="background: linear-gradient(135deg, ${{COLORS[statut]}} 0%, ${{COLORS[statut]}}dd 100%); padding:16px; color:white;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <div>
+                            <h2 style="font-size:18px; font-weight:700; margin:0;">🏘️ ${{props.nom}}</h2>
+                            <div style="font-size:13px; opacity:0.9; margin-top:4px;">${{props.code}} • ${{props.dept_nom || 'Département ' + (props.dept || '')}}</div>
+                        </div>
+                    </div>
+                    <div style="display:inline-block; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600;">
+                        ${{statutLabels[statut]}}
+                    </div>
+                </div>
+                
+                <!-- Navigation -->
+                <div style="display:flex; border-bottom:1px solid #e0e0e0;">
+                    <button onclick="restoreSidebar()" style="flex:1; background:white; color:#1a1a1a; border:none; padding:12px; font-weight:600; cursor:pointer; font-size:12px; border-right:1px solid #e0e0e0;">
                         🇫🇷 France
                     </button>
-                    <button onclick="selectDepartement('${{selectedDept}}', '')" style="flex:1; background:#000091; color:white; border:none; padding:10px; border-radius:8px; font-weight:600; cursor:pointer; font-size:12px;">
+                    <button onclick="selectDepartement('${{selectedDept || props.dept}}', '${{props.dept_nom || ''}}')" style="flex:1; background:#000091; color:white; border:none; padding:12px; font-weight:600; cursor:pointer; font-size:12px;">
                         ← Département
                     </button>
                 </div>
                 
-                <div class="card" style="border-left: 4px solid ${{COLORS[statut]}};">
-                    <h3>🏘️ ${{props.nom}}</h3>
-                    <div class="info-row">
-                        <span class="info-label">Code INSEE</span>
-                        <span class="info-value">${{props.code}}</span>
+                <!-- Contenu scrollable -->
+                <div style="flex:1; overflow-y:auto; padding:16px;">
+                    <!-- Infos générales -->
+                    <div class="card">
+                        <h3 style="font-size:14px;">📍 Informations</h3>
+                        <div class="info-row">
+                            <span class="info-label">Type composition</span>
+                            <span class="info-value">${{props.type_composition || 'N/A'}}</span>
+                        </div>
                     </div>
-                    <div class="info-row">
-                        <span class="info-label">Population</span>
-                        <span class="info-value">${{props.population ? props.population.toLocaleString() + ' hab.' : 'N/A'}}</span>
+                    
+                    <!-- Données BAN -->
+                    <div class="card">
+                        <h3 style="font-size:14px;">📊 Données BAN</h3>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+                            <div style="background:#f5f5f5; padding:12px; border-radius:8px; text-align:center;">
+                                <div style="font-size:20px; font-weight:700; color:#1a1a1a;">${{props.nb_numeros ? props.nb_numeros.toLocaleString() : '0'}}</div>
+                                <div style="font-size:11px; color:#666;">Numéros</div>
+                            </div>
+                            <div style="background:#f5f5f5; padding:12px; border-radius:8px; text-align:center;">
+                                <div style="font-size:20px; font-weight:700; color:#1a1a1a;">${{props.nb_voies || 0}}</div>
+                                <div style="font-size:11px; color:#666;">Voies</div>
+                            </div>
+                        </div>
+                        ${{props.nb_voies_avec_banid ? `
+                        <div class="info-row" style="margin-top:10px;">
+                            <span class="info-label">Voies avec banId</span>
+                            <span class="info-value">${{props.nb_voies_avec_banid}}</span>
+                        </div>
+                        ` : ''}}
                     </div>
-                    <div class="info-row">
-                        <span class="info-label">Statut</span>
-                        <span class="status-badge badge-${{statut}}">${{statutLabels[statut]}}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Type composition</span>
-                        <span class="info-value">${{props.type_composition || 'N/A'}}</span>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>📊 Données BAN</h3>
-                    <div class="info-row">
-                        <span class="info-label">Numéros</span>
-                        <span class="info-value">${{props.nb_numeros ? props.nb_numeros.toLocaleString() : '0'}}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Voies</span>
-                        <span class="info-value">${{props.nb_voies || 0}}</span>
-                    </div>
-                    ${{props.nb_voies_avec_banid ? `
-                    <div class="info-row">
-                        <span class="info-label">Voies avec banId</span>
-                        <span class="info-value">${{props.nb_voies_avec_banid}}</span>
-                    </div>
-                    ` : ''}}
-                </div>
-                
-                ${{props.producteur || props.date_publication ? `
-                <div class="card">
-                    <h3>👤 Producteur</h3>
-                    ${{props.producteur ? `
-                    <div class="info-row">
-                        <span class="info-label">Nom</span>
-                        <span class="info-value">${{props.producteur}}</span>
-                    </div>
-                    ` : ''}}
-                    ${{props.date_publication ? `
-                    <div class="info-row">
-                        <span class="info-label">Publication</span>
-                        <span class="info-value">${{props.date_publication.split('T')[0]}}</span>
+                    
+                    ${{props.producteur || props.date_publication ? `
+                    <!-- Producteur -->
+                    <div class="card">
+                        <h3 style="font-size:14px;">👤 Producteur</h3>
+                        ${{props.producteur ? `
+                        <div class="info-row">
+                            <span class="info-label">Nom</span>
+                            <span class="info-value">${{props.producteur}}</span>
+                        </div>
+                        ` : ''}}
+                        ${{props.date_publication ? `
+                        <div class="info-row">
+                            <span class="info-label">Publication</span>
+                            <span class="info-value">${{props.date_publication.split('T')[0]}}</span>
+                        </div>
+                        ` : ''}}
                     </div>
                     ` : ''}}
                 </div>
-                ` : ''}}
             `;
         }}
         
@@ -994,10 +1080,19 @@ app_html = f"""
             currentView = 'france';
             selectedDept = null;
             
-            document.getElementById('breadcrumb').innerHTML = `<span class="bc-current">🇫🇷 France</span>`;
-            
             map.setView([46.603354, 1.888334], 6);
             showDepartements();
+            
+            // Vérifier si on doit restaurer le sidebar
+            if (window._originalSidebarContent) {{
+                document.querySelector('.sidebar').innerHTML = window._originalSidebarContent;
+                window._originalSidebarContent = null;
+                // Réattacher les events
+                document.getElementById('producteurSelect').addEventListener('change', onProducteurChange);
+                document.getElementById('searchInput').addEventListener('input', onSearch);
+            }}
+            
+            document.getElementById('breadcrumb').innerHTML = `<span class="bc-current">🇫🇷 France</span>`;
             
             document.getElementById('infoPanel').innerHTML = `
                 <div class="empty">
@@ -1158,6 +1253,106 @@ app_html = f"""
                 // Re-filter communes
                 selectDepartement(selectedDept, '');
             }}
+        }}
+        
+        // Toggle status depuis la vue département (refresh la liste)
+        async function toggleDeptStatus(statut, deptCode, deptNom) {{
+            if (activeStatuts.includes(statut)) {{
+                activeStatuts = activeStatuts.filter(s => s !== statut);
+            }} else {{
+                activeStatuts.push(statut);
+            }}
+            
+            // Recharger les communes du département
+            const communesData = await fetchAPI(`/api/departement/${{deptCode}}/communes`);
+            if (communesData) {{
+                showCommunes(communesData);
+                showDeptInfo(deptCode, deptNom, communesData);
+            }}
+        }}
+        
+        // Filtre de recherche dans le département
+        function filterDeptCommunes(query, deptCode, deptNom) {{
+            const communes = window._currentDeptCommunes || [];
+            const q = query.toLowerCase().trim();
+            
+            let filtered = communes;
+            if (q.length > 0) {{
+                filtered = communes.filter(c => 
+                    c.nom.toLowerCase().includes(q) || 
+                    c.code.toLowerCase().includes(q)
+                );
+            }}
+            
+            // Appliquer aussi le filtre producteur si actif
+            const prodSelect = document.getElementById('deptProducteurSelect');
+            const prodValue = prodSelect ? prodSelect.value : '';
+            if (prodValue) {{
+                filtered = filtered.filter(c => c.producteur === prodValue);
+            }}
+            
+            updateCommunesList(filtered);
+        }}
+        
+        // Filtre par producteur dans le département
+        function filterByProducteur(producteur, deptCode, deptNom) {{
+            const communes = window._currentDeptCommunes || [];
+            const searchInput = document.getElementById('deptSearchInput');
+            const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+            
+            let filtered = communes;
+            
+            // Appliquer filtre producteur
+            if (producteur) {{
+                filtered = filtered.filter(c => c.producteur === producteur);
+            }}
+            
+            // Appliquer filtre recherche
+            if (query.length > 0) {{
+                filtered = filtered.filter(c => 
+                    c.nom.toLowerCase().includes(query) || 
+                    c.code.toLowerCase().includes(query)
+                );
+            }}
+            
+            updateCommunesList(filtered);
+            
+            // Mettre à jour la carte aussi
+            if (communesLayer) {{
+                communesLayer.eachLayer(layer => {{
+                    const props = layer.feature.properties;
+                    const matchProd = !producteur || props.producteur === producteur;
+                    const matchSearch = !query || props.nom.toLowerCase().includes(query) || props.code.toLowerCase().includes(query);
+                    const matchStatus = activeStatuts.includes(props.statut || 'gris');
+                    
+                    if (matchProd && matchSearch && matchStatus) {{
+                        layer.setStyle({{ fillOpacity: 0.7 }});
+                    }} else {{
+                        layer.setStyle({{ fillOpacity: 0.1 }});
+                    }}
+                }});
+            }}
+        }}
+        
+        // Mettre à jour la liste des communes
+        function updateCommunesList(communes) {{
+            const container = document.getElementById('communesList');
+            if (!container) return;
+            
+            if (communes.length === 0) {{
+                container.innerHTML = `<p style="color:#999; text-align:center; padding:30px; font-size:13px;">Aucune commune trouvée</p>`;
+                return;
+            }}
+            
+            container.innerHTML = communes.map(c => `
+                <div class="commune-item" onclick="goToCommune('${{c.code}}')" style="padding:10px 12px; border-bottom: 1px solid #f0f0f0;">
+                    <span class="commune-dot" style="background:${{COLORS[c.statut] || COLORS.gris}}"></span>
+                    <div style="flex:1;">
+                        <div class="commune-name">${{c.nom}}</div>
+                        <div style="font-size:11px; color:#888;">${{c.code}}${{c.producteur ? ' • ' + c.producteur : ''}}</div>
+                    </div>
+                </div>
+            `).join('');
         }}
         
         function resetFilters() {{
