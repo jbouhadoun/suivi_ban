@@ -12,6 +12,10 @@ RUN pip install --no-cache-dir --target=/build/deps -r requirements.txt
 # ===========================================
 FROM python:3.12-slim
 
+# Installer unzip
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && \
+    rm -rf /var/lib/apt/lists/*
+
 # Créer un utilisateur non-root
 RUN groupadd -g 1000 appgroup && \
     useradd -u 1000 -g appgroup -m -s /bin/bash appuser
@@ -23,8 +27,10 @@ COPY --from=builder /build/deps /usr/local/lib/python3.12/site-packages/
 
 # Copier l'application
 COPY --chown=appuser:appgroup app.py api.py ./
-COPY --chown=appuser:appgroup data/ ./data/
-COPY --chown=appuser:appgroup cache/ ./cache/
+
+# Copier et dézipper les données
+COPY --chown=appuser:appgroup data.zip ./
+RUN unzip data.zip && rm data.zip && chown -R appuser:appgroup data/ cache/
 
 # Créer les répertoires nécessaires pour Streamlit
 RUN mkdir -p /app/.streamlit && chown -R appuser:appgroup /app
