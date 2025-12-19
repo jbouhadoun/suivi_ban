@@ -20,7 +20,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # URL de l'API (à adapter si besoin)
-API_URL = "http://localhost:8000"
+# En K8s, l'API est exposée via le même Ingress sur /api
+# En local, utiliser localhost:8000
+import os
+API_URL = os.getenv("API_URL", "")
 
 # HTML complet de l'application
 app_html = f"""
