@@ -441,6 +441,7 @@ app_html = f"""
         .leaflet-popup-content-wrapper {{ border-radius: 10px; }}
         .leaflet-popup-content {{ margin: 14px; }}
         
+        
         /* Scrollbar */
         ::-webkit-scrollbar {{ width: 6px; }}
         ::-webkit-scrollbar-track {{ background: #f5f5f5; }}
@@ -541,23 +542,23 @@ app_html = f"""
     <div class="legend">
         <div class="legend-item">
             <span class="legend-dot" style="background:#2e7d32"></span>
-            <span class="legend-label">Vert - BAL nouveau socle</span>
+            <span class="legend-label">Nouveau socle</span>
         </div>
         <div class="legend-item">
             <span class="legend-dot" style="background:#e65100"></span>
-            <span class="legend-label">Orange - BAL ancien socle (avec ID)</span>
-        </div>
-        <div class="legend-item">
-            <span class="legend-dot" style="background:#c62828"></span>
-            <span class="legend-label">Rouge - BAL ancien socle (sans ID)</span>
+            <span class="legend-label">Ancien + ID</span>
         </div>
         <div class="legend-item">
             <span class="legend-dot" style="background:#f9a825"></span>
-            <span class="legend-label">Jaune - Assemblage</span>
+            <span class="legend-label">Assemblage</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot" style="background:#c62828"></span>
+            <span class="legend-label">Ancien sans ID</span>
         </div>
         <div class="legend-item">
             <span class="legend-dot" style="background:#616161"></span>
-            <span class="legend-label">Gris - Pas de données</span>
+            <span class="legend-label">Pas de données</span>
         </div>
     </div>
     
@@ -665,37 +666,47 @@ app_html = f"""
                 onEachFeature: (feature, layer) => {{
                     const code = feature.properties.code;
                     const stats = departementsStats[code];
-                    
-                    // Vérifier si le département est actif (sa couleur dominante est dans les filtres)
-                    const isActive = stats && stats.total > 0 && activeStatuts.includes(getOriginalDominant(stats));
+                    const nom = stats?.nom || feature.properties.nom;
                     
                     layer.on('mouseover', e => {{
-                        if (isActive) {{
-                            e.target.setStyle({{ weight: 3, color: '#000091', fillOpacity: 0.8 }});
-                        }}
+                        e.target.setStyle({{ weight: 3, color: '#000091', fillOpacity: 0.9 }});
                     }});
                     
                     layer.on('mouseout', e => departementsLayer.resetStyle(e.target));
                     
                     layer.on('click', () => {{
-                        if (isActive) {{
-                            selectDepartement(code, stats.nom || feature.properties.nom);
+                        if (stats && stats.total > 0) {{
+                            selectDepartement(code, nom);
                         }}
                     }});
                     
-                    // Tooltip adapté selon l'état
-                    let tooltip;
-                    if (!stats || stats.total === 0) {{
-                        tooltip = `<b>${{feature.properties.nom}}</b><br><i>Aucune donnée</i>`;
-                    }} else if (!isActive) {{
-                        tooltip = `<b>${{feature.properties.nom}}</b><br><i>Filtré (majoritairement ${{getOriginalDominant(stats)}})</i>`;
+                    // Tooltip détaillé
+                    if (stats && stats.total > 0) {{
+                        const pcts = {{
+                            vert: Math.round((stats.vert || 0) / stats.total * 100),
+                            orange: Math.round((stats.orange || 0) / stats.total * 100),
+                            rouge: Math.round((stats.rouge || 0) / stats.total * 100),
+                            jaune: Math.round((stats.jaune || 0) / stats.total * 100),
+                            gris: Math.round((stats.gris || 0) / stats.total * 100)
+                        }};
+                        layer.bindTooltip(`
+                            <b>${{nom}}</b><br>
+                            <div style="display:flex; height:10px; width:140px; border-radius:5px; overflow:hidden; margin:6px 0; border:1px solid #ddd;">
+                                <div style="width:${{pcts.vert}}%; background:${{COLORS.vert}};"></div>
+                                <div style="width:${{pcts.orange}}%; background:${{COLORS.orange}};"></div>
+                                <div style="width:${{pcts.jaune}}%; background:${{COLORS.jaune}};"></div>
+                                <div style="width:${{pcts.rouge}}%; background:${{COLORS.rouge}};"></div>
+                                <div style="width:${{pcts.gris}}%; background:${{COLORS.gris}};"></div>
+                            </div>
+                            <span style="color:#2e7d32">●</span> ${{pcts.vert}}%
+                            <span style="color:#e65100">●</span> ${{pcts.orange}}%
+                            <span style="color:#c62828">●</span> ${{pcts.rouge}}%
+                            <span style="color:#f9a825">●</span> ${{pcts.jaune}}%
+                            <span style="color:#616161">●</span> ${{pcts.gris}}%
+                        `, {{ sticky: true }});
                     }} else {{
-                        // Compter les communes dans les statuts actifs
-                        let activeCount = 0;
-                        activeStatuts.forEach(s => {{ activeCount += (stats[s] || 0); }});
-                        tooltip = `<b>${{feature.properties.nom}}</b><br>${{activeCount}} communes (${{getOriginalDominant(stats)}})`;
+                        layer.bindTooltip(`<b>${{nom}}</b><br><i>Aucune donnée</i>`, {{ sticky: true }});
                     }}
-                    layer.bindTooltip(tooltip, {{ sticky: true }});
                 }}
             }}).addTo(map);
         }}
@@ -705,30 +716,31 @@ app_html = f"""
             const stats = departementsStats[code];
             
             if (!stats || stats.total === 0) {{
-                return {{ fillColor: '#e0e0e0', color: '#bdbdbd', weight: 1, fillOpacity: 0.3 }};
+                return {{ fillColor: '#e0e0e0', color: '#bdbdbd', weight: 1, fillOpacity: 0.4 }};
             }}
             
-            // Trouver la couleur dominante ORIGINALE (sans filtre)
-            const originalDominant = getOriginalDominant(stats);
+            // Trouver la couleur dominante et son pourcentage
+            const total = stats.total;
+            const statuts = [
+                {{ key: 'vert', value: stats.vert || 0, color: COLORS.vert }},
+                {{ key: 'orange', value: stats.orange || 0, color: COLORS.orange }},
+                {{ key: 'jaune', value: stats.jaune || 0, color: COLORS.jaune }},
+                {{ key: 'rouge', value: stats.rouge || 0, color: COLORS.rouge }},
+                {{ key: 'gris', value: stats.gris || 0, color: COLORS.gris }}
+            ].sort((a, b) => b.value - a.value);
             
-            // Si la couleur originale n'est pas dans les filtres actifs → griser
-            if (!activeStatuts.includes(originalDominant)) {{
-                return {{ fillColor: '#e0e0e0', color: '#bdbdbd', weight: 1, fillOpacity: 0.3 }};
-            }}
+            const dominant = statuts[0];
+            const pctDominant = dominant.value / total;
             
-            // Calculer combien de communes sont dans les statuts actifs
-            let activeCount = 0;
-            activeStatuts.forEach(s => {{ activeCount += (stats[s] || 0); }});
-            
-            if (activeCount === 0) {{
-                return {{ fillColor: '#e0e0e0', color: '#bdbdbd', weight: 1, fillOpacity: 0.3 }};
-            }}
+            // Opacité basée sur le % dominant (min 0.3, max 0.85)
+            // Plus le % est élevé, plus c'est opaque
+            const opacity = 0.3 + (pctDominant * 0.55);
             
             return {{
-                fillColor: COLORS[originalDominant],
+                fillColor: dominant.color,
                 color: '#fff',
                 weight: 1,
-                fillOpacity: 0.7
+                fillOpacity: opacity
             }};
         }}
         
