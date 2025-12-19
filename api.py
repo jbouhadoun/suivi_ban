@@ -41,7 +41,12 @@ def get_db():
 
 @app.get("/")
 def root():
-    return {"status": "osk", "message": "API Suivi BAN"}
+    return {"status": "ok", "message": "API Suivi BAN"}
+
+
+@app.get("/api")
+def api_root():
+    return {"status": "ok", "message": "API Suivi BAN - /api endpoint"}
 
 
 @app.get("/api/departements")

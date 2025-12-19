@@ -437,7 +437,11 @@ app_html = f"""
         .zoom-indicator strong {{ color: #000091; font-size: 14px; }}
         
         /* Leaflet overrides */
-        .leaflet-control-zoom {{ display: none; }}
+        .leaflet-control-zoom {{ 
+            border: none !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+            border-radius: 8px !important;
+        }}
         .leaflet-popup-content-wrapper {{ border-radius: 10px; }}
         .leaflet-popup-content {{ margin: 14px; }}
         
@@ -518,12 +522,11 @@ app_html = f"""
             </div>
             
             <div class="info-panel" id="infoPanel">
-                <div class="empty">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                        <circle cx="12" cy="10" r="3"/>
-                    </svg>
-                    <p>Sélectionnez un département<br>ou recherchez une commune</p>
+                <div id="globalStats">
+                    <div class="card" style="text-align:center; padding:20px;">
+                        <div class="spinner"></div>
+                        <p style="margin-top:10px; color:#666;">Chargement des statistiques...</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -532,11 +535,6 @@ app_html = f"""
         <div id="map"></div>
     </div>
     
-    <!-- Map controls -->
-    <div class="map-controls">
-        <button class="map-btn" onclick="map.zoomIn()">+</button>
-        <button class="map-btn" onclick="map.zoomOut()">−</button>
-    </div>
     
     <!-- Legend -->
     <div class="legend">
@@ -592,12 +590,28 @@ app_html = f"""
         let communesLayer = null;
         
         // === MAP ===
-        const map = L.map('map', {{ zoomControl: false }}).setView([46.603354, 1.888334], 6);
+        const map = L.map('map', {{ zoomControl: true }}).setView([46.603354, 1.888334], 6);
         
-        L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
-            attribution: '© CARTO | IGN',
-            maxZoom: 19
-        }}).addTo(map);
+        // Déplacer le zoom par défaut en haut à gauche
+        map.zoomControl.setPosition('topleft');
+        
+        // Fonds de carte IGN uniquement
+        const baseLayers = {{
+            'Plan IGN': L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={{z}}&TILEROW={{y}}&TILECOL={{x}}', {{
+                attribution: '© IGN - Géoportail',
+                maxZoom: 19
+            }}),
+            'Ortho IGN': L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={{z}}&TILEROW={{y}}&TILECOL={{x}}', {{
+                attribution: '© IGN - Géoportail',
+                maxZoom: 19
+            }})
+        }};
+        
+        // Fond par défaut : Plan IGN
+        baseLayers['Plan IGN'].addTo(map);
+        
+        // Sélecteur de fond (en haut à droite)
+        L.control.layers(baseLayers, {{}}, {{ position: 'topright', collapsed: true }}).addTo(map);
         
         map.on('zoomend', () => {{
             document.getElementById('zoomLevel').textContent = map.getZoom();
@@ -615,11 +629,115 @@ app_html = f"""
             }}
         }}
         
+        // Stocker les stats globales
+        let globalStatsData = null;
+        
+        // Afficher les stats globales de la France
+        function showGlobalStats() {{
+            if (!globalStatsData) return;
+            
+            const stats = globalStatsData;
+            
+            // Calculer les stats filtrées
+            let filteredTotal = 0;
+            let filteredStats = {{ vert: 0, orange: 0, rouge: 0, jaune: 0, gris: 0 }};
+            
+            // Utiliser departementsStats pour calculer les totaux filtrés
+            Object.values(departementsStats).forEach(dept => {{
+                activeStatuts.forEach(s => {{
+                    filteredStats[s] += (dept[s] || 0);
+                    filteredTotal += (dept[s] || 0);
+                }});
+            }});
+            
+            const isFiltered = activeStatuts.length < 5;
+            
+            document.getElementById('infoPanel').innerHTML = `
+                <div class="card" style="background: linear-gradient(135deg, #000091 0%, #1212ff 100%); color: white; padding: 20px;">
+                    <h3 style="color:white; margin-bottom:15px;">🇫🇷 France entière</h3>
+                    <div style="font-size:32px; font-weight:700;">${{isFiltered ? filteredTotal.toLocaleString() : stats.total.toLocaleString()}}</div>
+                    <div style="font-size:13px; opacity:0.9;">communes ${{isFiltered ? '(filtrées)' : ''}}</div>
+                </div>
+                
+                <div class="card">
+                    <h3>📊 Répartition par statut</h3>
+                    <div style="margin:15px 0;">
+                        <div style="display:flex; height:20px; border-radius:10px; overflow:hidden;">
+                            ${{activeStatuts.includes('vert') ? `<div style="width:${{(filteredStats.vert / filteredTotal * 100) || 0}}%; background:${{COLORS.vert}};"></div>` : ''}}
+                            ${{activeStatuts.includes('orange') ? `<div style="width:${{(filteredStats.orange / filteredTotal * 100) || 0}}%; background:${{COLORS.orange}};"></div>` : ''}}
+                            ${{activeStatuts.includes('jaune') ? `<div style="width:${{(filteredStats.jaune / filteredTotal * 100) || 0}}%; background:${{COLORS.jaune}};"></div>` : ''}}
+                            ${{activeStatuts.includes('rouge') ? `<div style="width:${{(filteredStats.rouge / filteredTotal * 100) || 0}}%; background:${{COLORS.rouge}};"></div>` : ''}}
+                            ${{activeStatuts.includes('gris') ? `<div style="width:${{(filteredStats.gris / filteredTotal * 100) || 0}}%; background:${{COLORS.gris}};"></div>` : ''}}
+                        </div>
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#e8f5e9; border-radius:8px; opacity:${{activeStatuts.includes('vert') ? 1 : 0.4}};">
+                            <span style="width:12px; height:12px; background:${{COLORS.vert}}; border-radius:50%;"></span>
+                            <div>
+                                <div style="font-weight:700; color:#2e7d32;">${{filteredStats.vert.toLocaleString()}}</div>
+                                <div style="font-size:10px; color:#2e7d32;">Nouveau socle</div>
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#fff3e0; border-radius:8px; opacity:${{activeStatuts.includes('orange') ? 1 : 0.4}};">
+                            <span style="width:12px; height:12px; background:${{COLORS.orange}}; border-radius:50%;"></span>
+                            <div>
+                                <div style="font-weight:700; color:#e65100;">${{filteredStats.orange.toLocaleString()}}</div>
+                                <div style="font-size:10px; color:#e65100;">Ancien + ID</div>
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#ffebee; border-radius:8px; opacity:${{activeStatuts.includes('rouge') ? 1 : 0.4}};">
+                            <span style="width:12px; height:12px; background:${{COLORS.rouge}}; border-radius:50%;"></span>
+                            <div>
+                                <div style="font-weight:700; color:#c62828;">${{filteredStats.rouge.toLocaleString()}}</div>
+                                <div style="font-size:10px; color:#c62828;">Ancien sans ID</div>
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#fffde7; border-radius:8px; opacity:${{activeStatuts.includes('jaune') ? 1 : 0.4}};">
+                            <span style="width:12px; height:12px; background:${{COLORS.jaune}}; border-radius:50%;"></span>
+                            <div>
+                                <div style="font-weight:700; color:#f9a825;">${{filteredStats.jaune.toLocaleString()}}</div>
+                                <div style="font-size:10px; color:#f9a825;">Assemblage</div>
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#f5f5f5; border-radius:8px; opacity:${{activeStatuts.includes('gris') ? 1 : 0.4}}; grid-column: span 2;">
+                            <span style="width:12px; height:12px; background:${{COLORS.gris}}; border-radius:50%;"></span>
+                            <div>
+                                <div style="font-weight:700; color:#616161;">${{filteredStats.gris.toLocaleString()}}</div>
+                                <div style="font-size:10px; color:#616161;">Pas de données</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>📈 Données BAN</h3>
+                    <div class="info-row">
+                        <span class="info-label">Numéros d'adresses</span>
+                        <span class="info-value">${{(stats.numeros || 0).toLocaleString()}}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Voies</span>
+                        <span class="info-value">${{(stats.voies || 0).toLocaleString()}}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Départements</span>
+                        <span class="info-value">${{Object.keys(departementsStats).length}}</span>
+                    </div>
+                </div>
+                
+                <div style="text-align:center; padding:15px; color:#666; font-size:12px;">
+                    👆 Cliquez sur un département pour voir le détail
+                </div>
+            `;
+        }}
+        
         // === INIT ===
         async function init() {{
             // Load stats
             const stats = await fetchAPI('/api/stats/global');
             if (stats) {{
+                globalStatsData = stats;
                 document.getElementById('statTotal').textContent = stats.total.toLocaleString();
                 document.getElementById('statVert').textContent = stats.pct_vert + '%';
                 document.getElementById('statNumeros').textContent = (stats.numeros || 0).toLocaleString();
@@ -633,6 +751,7 @@ app_html = f"""
             departementsData = await fetchAPI('/api/departements');
             if (departementsData) {{
                 showDepartements();
+                showGlobalStats();
             }}
             
             // Load producteurs
@@ -719,21 +838,32 @@ app_html = f"""
                 return {{ fillColor: '#e0e0e0', color: '#bdbdbd', weight: 1, fillOpacity: 0.4 }};
             }}
             
-            // Trouver la couleur dominante et son pourcentage
-            const total = stats.total;
+            // Ne compter que les statuts actifs (filtrés)
             const statuts = [
                 {{ key: 'vert', value: stats.vert || 0, color: COLORS.vert }},
                 {{ key: 'orange', value: stats.orange || 0, color: COLORS.orange }},
                 {{ key: 'jaune', value: stats.jaune || 0, color: COLORS.jaune }},
                 {{ key: 'rouge', value: stats.rouge || 0, color: COLORS.rouge }},
                 {{ key: 'gris', value: stats.gris || 0, color: COLORS.gris }}
-            ].sort((a, b) => b.value - a.value);
+            ].filter(s => activeStatuts.includes(s.key))
+             .sort((a, b) => b.value - a.value);
+            
+            // Si aucun statut actif dans ce département → grisé
+            if (statuts.length === 0 || statuts.every(s => s.value === 0)) {{
+                return {{ fillColor: '#e0e0e0', color: '#bdbdbd', weight: 1, fillOpacity: 0.2 }};
+            }}
+            
+            // Calculer le total des statuts actifs
+            const activeTotal = statuts.reduce((sum, s) => sum + s.value, 0);
+            
+            if (activeTotal === 0) {{
+                return {{ fillColor: '#e0e0e0', color: '#bdbdbd', weight: 1, fillOpacity: 0.2 }};
+            }}
             
             const dominant = statuts[0];
-            const pctDominant = dominant.value / total;
+            const pctDominant = dominant.value / activeTotal;
             
             // Opacité basée sur le % dominant (min 0.3, max 0.85)
-            // Plus le % est élevé, plus c'est opaque
             const opacity = 0.3 + (pctDominant * 0.55);
             
             return {{
@@ -912,28 +1042,8 @@ app_html = f"""
                     <div style="font-size:13px; opacity:0.9;">Département ${{code}} • ${{total}} communes</div>
                 </div>
                 
-                <!-- Stats compactes (cliquables pour filtrer) -->
-                <div style="display:flex; padding:12px; gap:8px; background:#fafafa; border-bottom:1px solid #e0e0e0; overflow-x:auto;">
-                    <div class="dept-filter-chip" data-status="vert" onclick="toggleDeptStatus('vert', '${{code}}', '${{nom}}')" style="background:#e8f5e9; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('vert') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('vert') ? '#2e7d32' : 'transparent'}};">
-                        <span style="font-weight:700; color:#2e7d32;">${{stats.vert}}</span>
-                        <span style="font-size:11px; color:#2e7d32; margin-left:4px;">Nouveau</span>
-                    </div>
-                    <div class="dept-filter-chip" data-status="orange" onclick="toggleDeptStatus('orange', '${{code}}', '${{nom}}')" style="background:#fff3e0; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('orange') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('orange') ? '#e65100' : 'transparent'}};">
-                        <span style="font-weight:700; color:#e65100;">${{stats.orange}}</span>
-                        <span style="font-size:11px; color:#e65100; margin-left:4px;">Ancien+ID</span>
-                    </div>
-                    <div class="dept-filter-chip" data-status="rouge" onclick="toggleDeptStatus('rouge', '${{code}}', '${{nom}}')" style="background:#ffebee; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('rouge') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('rouge') ? '#c62828' : 'transparent'}};">
-                        <span style="font-weight:700; color:#c62828;">${{stats.rouge}}</span>
-                        <span style="font-size:11px; color:#c62828; margin-left:4px;">Ancien</span>
-                    </div>
-                    <div class="dept-filter-chip" data-status="jaune" onclick="toggleDeptStatus('jaune', '${{code}}', '${{nom}}')" style="background:#fffde7; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('jaune') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('jaune') ? '#f9a825' : 'transparent'}};">
-                        <span style="font-weight:700; color:#f9a825;">${{stats.jaune}}</span>
-                        <span style="font-size:11px; color:#f9a825; margin-left:4px;">Assemblage</span>
-                    </div>
-                    <div class="dept-filter-chip" data-status="gris" onclick="toggleDeptStatus('gris', '${{code}}', '${{nom}}')" style="background:#f5f5f5; padding:8px 12px; border-radius:20px; text-align:center; white-space:nowrap; cursor:pointer; opacity:${{activeStatuts.includes('gris') ? 1 : 0.4}}; border:2px solid ${{activeStatuts.includes('gris') ? '#616161' : 'transparent'}};">
-                        <span style="font-weight:700; color:#616161;">${{stats.gris}}</span>
-                        <span style="font-size:11px; color:#616161; margin-left:4px;">Vide</span>
-                    </div>
+                <!-- Filtres de statuts -->
+                <div id="deptFilters" style="display:flex; flex-wrap:wrap; padding:10px; gap:6px; background:#fafafa; border-bottom:1px solid #e0e0e0;">
                 </div>
                 
                 <!-- Recherche dans le département -->
@@ -954,7 +1064,7 @@ app_html = f"""
                 
                 <!-- Titre liste communes -->
                 <div style="padding:10px 16px; background:white; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-weight:600; color:#1a1a1a; font-size:13px;">
+                    <span id="communesCount" style="font-weight:600; color:#1a1a1a; font-size:13px;">
                         📋 Communes ${{filteredCount !== total ? '(' + filteredCount + '/' + total + ')' : '(' + total + ')'}}
                     </span>
                     <span style="font-size:11px; color:#666;">Cliquez pour zoomer</span>
@@ -963,11 +1073,18 @@ app_html = f"""
                 <!-- Liste des communes (scroll) -->
                 <div id="communesList" style="flex:1; overflow-y:auto; background:#fff;">
                     ${{communesHtml}}
-                </div>
-            `;
+                    </div>
+                `;
             
-            // Stocker les communes pour le filtre
+            // Stocker les communes et infos pour les filtres
             window._currentDeptCommunes = sorted;
+            window._currentDeptTotal = total;
+            window._currentDeptCode = code;
+            window._currentDeptNom = nom;
+            window._currentDeptStats = stats;
+            
+            // Créer les filtres dynamiquement
+            setTimeout(() => updateDeptFilters(), 50);
             
             // Remplir le select producteurs avec les producteurs du département
             setTimeout(() => {{
@@ -1106,15 +1223,8 @@ app_html = f"""
             
             document.getElementById('breadcrumb').innerHTML = `<span class="bc-current">🇫🇷 France</span>`;
             
-            document.getElementById('infoPanel').innerHTML = `
-                <div class="empty">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                        <circle cx="12" cy="10" r="3"/>
-                    </svg>
-                    <p>Sélectionnez un département<br>ou recherchez une commune</p>
-                </div>
-            `;
+            // Afficher les stats globales
+            showGlobalStats();
         }}
         
         async function goToCommune(code) {{
@@ -1215,7 +1325,7 @@ app_html = f"""
                             <div class="info-row">
                                 <span class="info-label">Communes</span>
                                 <span class="info-value">${{prod ? prod.nb_communes : 0}}</span>
-                            </div>
+                        </div>
                             <div class="info-row">
                                 <span class="info-label">Départements</span>
                                 <span class="info-value">${{prod ? prod.nb_depts : 0}}</span>
@@ -1261,31 +1371,92 @@ app_html = f"""
             // Refresh view
             if (currentView === 'france') {{
                 showDepartements();
+                showGlobalStats();
             }} else if (communesLayer) {{
                 // Re-filter communes
                 selectDepartement(selectedDept, '');
             }}
         }}
         
-        // Toggle status depuis la vue département (refresh la liste)
-        async function toggleDeptStatus(statut, deptCode, deptNom) {{
+        // Mettre à jour les filtres dans la vue département
+        function updateDeptFilters() {{
+            const container = document.getElementById('deptFilters');
+            if (!container) return;
+            
+            const stats = window._currentDeptStats || {{}};
+            const code = window._currentDeptCode || '';
+            const nom = window._currentDeptNom || '';
+            
+            const filterData = [
+                {{ key: 'vert', label: 'Nouveau', bg: '#e8f5e9', color: '#2e7d32' }},
+                {{ key: 'orange', label: 'Ancien+ID', bg: '#fff3e0', color: '#e65100' }},
+                {{ key: 'rouge', label: 'Ancien', bg: '#ffebee', color: '#c62828' }},
+                {{ key: 'jaune', label: 'Assemblage', bg: '#fffde7', color: '#f9a825' }},
+                {{ key: 'gris', label: 'Vide', bg: '#f5f5f5', color: '#616161' }}
+            ];
+            
+            container.innerHTML = filterData.map(f => {{
+                const isActive = activeStatuts.includes(f.key);
+                const count = stats[f.key] || 0;
+                return `
+                    <div onclick="toggleDeptStatus('${{f.key}}')" 
+                         style="background:${{f.bg}}; padding:6px 10px; border-radius:16px; cursor:pointer; 
+                                opacity:${{isActive ? 1 : 0.35}}; border:2px solid ${{isActive ? f.color : 'transparent'}};
+                                display:flex; align-items:center; gap:4px; transition: all 0.2s;">
+                        <span style="font-weight:700; color:${{f.color}}; font-size:13px;">${{count}}</span>
+                        <span style="font-size:10px; color:${{f.color}};">${{f.label}}</span>
+                    </div>
+                `;
+            }}).join('');
+        }}
+        
+        // Toggle status depuis la vue département
+        async function toggleDeptStatus(statut) {{
+            // Toggle le statut
             if (activeStatuts.includes(statut)) {{
                 activeStatuts = activeStatuts.filter(s => s !== statut);
             }} else {{
                 activeStatuts.push(statut);
             }}
             
+            const code = window._currentDeptCode;
+            const nom = window._currentDeptNom;
+            
+            if (!code) return;
+            
+            // Mettre à jour visuellement les filtres
+            updateDeptFilters();
+            
             // Recharger les communes du département
-            const communesData = await fetchAPI(`/api/departement/${{deptCode}}/communes`);
+            const communesData = await fetchAPI(`/api/departement/${{code}}/communes`);
             if (communesData) {{
                 showCommunes(communesData);
-                showDeptInfo(deptCode, deptNom, communesData);
-            }}
-        }}
-        
+                
+                const total = communesData.features.length;
+                
+                // Mettre à jour la liste des communes
+                const filtered = communesData.features
+                    .map(c => c.properties)
+                    .filter(c => activeStatuts.includes(c.statut || 'gris'));
+                
+                window._currentDeptCommunes = filtered;
+                updateCommunesList(filtered);
+                
+                // Mettre à jour le compteur
+                const countEl = document.getElementById('communesCount');
+                if (countEl) {{
+                    const filteredCount = filtered.length;
+                    countEl.textContent = filteredCount !== total 
+                        ? `📋 Communes (${{filteredCount}}/${{total}})` 
+                        : `📋 Communes (${{total}})`;
+                        }}
+                    }}
+                }}
+                
         // Filtre de recherche dans le département
         function filterDeptCommunes(query, deptCode, deptNom) {{
             const communes = window._currentDeptCommunes || [];
+            const total = window._currentDeptTotal || communes.length;
             const q = query.toLowerCase().trim();
             
             let filtered = communes;
@@ -1304,11 +1475,21 @@ app_html = f"""
             }}
             
             updateCommunesList(filtered);
+            
+            // Mettre à jour le compteur
+            const countEl = document.getElementById('communesCount');
+            if (countEl) {{
+                const filteredCount = filtered.length;
+                countEl.textContent = filteredCount !== total 
+                    ? `📋 Communes (${{filteredCount}}/${{total}})` 
+                    : `📋 Communes (${{total}})`;
+            }}
         }}
         
         // Filtre par producteur dans le département
         function filterByProducteur(producteur, deptCode, deptNom) {{
             const communes = window._currentDeptCommunes || [];
+            const total = window._currentDeptTotal || communes.length;
             const searchInput = document.getElementById('deptSearchInput');
             const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
             
@@ -1328,6 +1509,15 @@ app_html = f"""
             }}
             
             updateCommunesList(filtered);
+            
+            // Mettre à jour le compteur
+            const countEl = document.getElementById('communesCount');
+            if (countEl) {{
+                const filteredCount = filtered.length;
+                countEl.textContent = filteredCount !== total 
+                    ? `📋 Communes (${{filteredCount}}/${{total}})` 
+                    : `📋 Communes (${{total}})`;
+            }}
             
             // Mettre à jour la carte aussi
             if (communesLayer) {{
