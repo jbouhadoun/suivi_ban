@@ -47,16 +47,16 @@ enableXsrfProtection = false\n\
 gatherUsageStats = false\n\
 ' > /app/.streamlit/config.toml && chown appuser:appgroup /app/.streamlit/config.toml
 
-# Script de démarrage
+# Script de démarrage (utilise python -m pour éviter les problèmes de PATH)
 RUN echo '#!/bin/sh\n\
 # Lancer l API en arrière-plan\n\
 python -m uvicorn api:app --host 0.0.0.0 --port 8000 &\n\
 \n\
 # Attendre que l API soit prête\n\
-sleep 2\n\
+sleep 3\n\
 \n\
-# Lancer Streamlit\n\
-exec streamlit run app.py\n\
+# Lancer Streamlit via python -m\n\
+exec python -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501\n\
 ' > /app/start.sh && chmod +x /app/start.sh && chown appuser:appgroup /app/start.sh
 
 # Passer à l'utilisateur non-root
