@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+
+# GitHub
+.github
+
+# Documentation
+*.md
+docs/
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# K8s manifests (pas besoin dans l'image)
+k8s/
+
+# Scripts de dev
+build-and-deploy.sh
+start.sh
+quickstart.sh
+setup_cron.sh
+
+# Tests
+tests/
+*.test.py
+
+# Autres
+*.log
+.DS_Store
+Thumbs.db
+
