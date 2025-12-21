@@ -145,7 +145,9 @@ def api_producteur_departements(nom: str):
                 "orange": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "orange"]}, 1, 0]}},
                 "rouge": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "rouge"]}, 1, 0]}},
                 "jaune": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "jaune"]}, 1, 0]}},
-                "gris": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "gris"]}, 1, 0]}}
+                "gris": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "gris"]}, 1, 0]}},
+                "numeros": {"$sum": "$nb_numeros"},
+                "voies": {"$sum": "$nb_voies"}
             }
         }
     ]
@@ -164,10 +166,39 @@ def api_producteur_departements(nom: str):
                 "rouge": doc["rouge"],
                 "jaune": doc["jaune"],
                 "gris": doc["gris"],
+                "numeros": doc.get("numeros", 0) or 0,
+                "voies": doc.get("voies", 0) or 0,
                 "pct_vert": round(doc["vert"] / total * 100, 1)
             }
     
     return results
+
+
+@app.get("/api/producteur/{nom}/stats")
+def api_producteur_stats(nom: str):
+    """Stats globales d'un producteur (numéros, voies, etc.)"""
+    communes = get_collection("communes")
+    
+    pipeline = [
+        {"$match": {"producteur": nom}},
+        {
+            "$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "numeros": {"$sum": "$nb_numeros"},
+                "voies": {"$sum": "$nb_voies"}
+            }
+        }
+    ]
+    
+    result = list(communes.aggregate(pipeline))
+    if result:
+        return {
+            "total": result[0].get("total", 0),
+            "numeros": result[0].get("numeros", 0) or 0,
+            "voies": result[0].get("voies", 0) or 0
+        }
+    return {"total": 0, "numeros": 0, "voies": 0}
 
 
 @app.get("/api/search")

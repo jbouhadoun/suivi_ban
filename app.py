@@ -23,7 +23,21 @@ st.markdown("""
 # En K8s : "" (URL relative via Ingress)
 # En local : "http://localhost:8000"
 import os
+import base64
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+
+# Charger le logo BAN en base64
+def load_logo_base64():
+    logo_path = os.path.join(os.path.dirname(__file__), "data", "BAN.png")
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    return None
+
+BAN_LOGO_BASE64 = load_logo_base64()
+
+# Préparer le HTML du logo
+logo_html = f'<img src="data:image/png;base64,{BAN_LOGO_BASE64}" alt="BAN" class="logo-ban" />' if BAN_LOGO_BASE64 else ''
 
 # HTML complet de l'application
 app_html = f"""
@@ -63,23 +77,129 @@ app_html = f"""
             background: linear-gradient(135deg, #000091 0%, #1212ff 100%);
             padding: 20px;
             color: white;
+            display: flex;
+            flex-direction: column;
+        }}
+        
+        .header-top {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }}
+        
+        .header-right {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }}
         
         .header h1 {{
-            font-size: 20px;
+            font-size: 16px;
             font-weight: 700;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
+            white-space: nowrap;
         }}
         
-        .header p {{ font-size: 12px; opacity: 0.8; margin-top: 4px; }}
+        .header p {{
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
         
         .badge {{
             background: rgba(255,255,255,0.2);
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            white-space: nowrap;
+        }}
+        
+        .logo-ban {{
+            height: 28px;
+            width: auto;
+            object-fit: contain;
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+            flex-shrink: 0;
+        }}
+        
+        .header-logos {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }}
+        
+        .header-logos span {{
+            white-space: nowrap;
+        }}
+        
+        /* Info bar */
+        .info-bar {{
+            position: absolute;
+            top: 10px;
+            left: 60px;
+            background: #E3F2FD;
+            border: 1px solid #BBDEFB;
+            border-radius: 8px;
+            padding: 12px 18px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 13px;
+            color: #1565C0;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            max-width: 95%;
+            width: auto;
+            white-space: nowrap;
+        }}
+        
+        .info-bar-content > div {{
+            white-space: normal;
+        }}
+        
+        .info-bar-content {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        
+        .info-bar.hidden {{
+            display: none;
+        }}
+        
+        .info-bar-content {{
+            flex: 1;
+            line-height: 1.4;
+        }}
+        
+        .info-bar-close {{
+            background: none;
+            border: none;
+            color: #1565C0;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+            font-weight: bold;
+        }}
+        
+        .info-bar-close:hover {{
+            opacity: 1;
         }}
         
         /* Stats */
@@ -368,7 +488,13 @@ app_html = f"""
         @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
         
         /* === MAP === */
-        #map {{ flex: 1; height: 100vh; }}
+        #map {{ flex: 1; height: 100vh; position: relative; }}
+        
+        .map-container {{
+            flex: 1;
+            position: relative;
+            height: 100vh;
+        }}
         
         /* Map controls */
         .map-controls {{
@@ -454,8 +580,18 @@ app_html = f"""
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="header">
-                <h1>🗺️ Suivi BAN <span class="badge">IGN</span></h1>
-                <p>Base Adresse Nationale - Tableau de bord</p>
+                <h1>
+                    <span class="header-logos">
+                        <span>Suivi du déploiement des identifiants uniques</span>
+                    </span>
+                </h1>
+                <p>
+                    <span>Base Adresse Nationale - Tableau de bord</span>
+                    <span class="header-right">
+                        {logo_html}
+                        <span class="badge">IGN</span>
+                    </span>
+                </p>
             </div>
             
             <div class="stats-bar" id="statsBar">
@@ -527,7 +663,16 @@ app_html = f"""
         </div>
         
         <!-- Map -->
-        <div id="map"></div>
+        <div class="map-container">
+            <div class="info-bar" id="infoBar">
+                <div class="info-bar-content">
+                    <div><strong>🔄 Actualisation quotidienne</strong> : Données mises à jour chaque jour à 2h du matin.</div>
+                    <div><strong>💡 Évolution des statuts</strong> : Les communes en orange passent progressivement au vert après validation.</div>
+                </div>
+                <button class="info-bar-close" onclick="closeInfoBar()" title="Fermer">×</button>
+            </div>
+            <div id="map"></div>
+        </div>
     </div>
     
     
@@ -577,9 +722,11 @@ app_html = f"""
         let departementsStats = {{}};
         let producteurs = [];
         let searchTimeout = null;
+        let filteredBanStats = null; // Stats BAN filtrées (numéros, voies)
         
         let departementsLayer = null;
         let communesLayer = null;
+        let currentDeptCommunesData = null; // Stocker les données GeoJSON des communes du département
         
         // === MAP ===
         const map = L.map('map', {{ zoomControl: true }}).setView([46.603354, 1.888334], 6);
@@ -630,11 +777,12 @@ app_html = f"""
             
             const stats = globalStatsData;
             
-            // Calculer les stats filtrées
+            // Calculer les stats filtrées pour le panneau d'information (en bas)
             let filteredTotal = 0;
             let filteredStats = {{ vert: 0, orange: 0, rouge: 0, gris: 0 }};
             
             // Utiliser departementsStats pour calculer les totaux filtrés
+            // Si un filtre producteur est actif, departementsStats contient déjà les stats filtrées
             Object.values(departementsStats).forEach(dept => {{
                 activeStatuts.forEach(s => {{
                     filteredStats[s] += (dept[s] || 0);
@@ -642,7 +790,28 @@ app_html = f"""
                 }});
             }});
             
-            const isFiltered = activeStatuts.length < 4;
+            const isFiltered = activeStatuts.length < 4 || selectedProducteur;
+            
+            // La barre supérieure garde toujours les stats globales (non filtrées)
+            // On ne modifie pas statTotal et statVert ici
+            
+            // Calculer les numéros et voies filtrés
+            let filteredNumeros = stats.numeros || 0;
+            let filteredVoies = stats.voies || 0;
+            
+            if (selectedProducteur && filteredBanStats) {{
+                // Utiliser les stats filtrées du producteur
+                filteredNumeros = filteredBanStats.numeros || 0;
+                filteredVoies = filteredBanStats.voies || 0;
+            }} else if (selectedProducteur) {{
+                // Calculer à partir des départements filtrés
+                filteredNumeros = 0;
+                filteredVoies = 0;
+                Object.values(departementsStats).forEach(dept => {{
+                    filteredNumeros += (dept.numeros || 0);
+                    filteredVoies += (dept.voies || 0);
+                }});
+            }}
             
             document.getElementById('infoPanel').innerHTML = `
                 <div class="card" style="background: linear-gradient(135deg, #000091 0%, #1212ff 100%); color: white; padding: 20px;">
@@ -698,11 +867,11 @@ app_html = f"""
                     <h3>📈 Données BAN</h3>
                     <div class="info-row">
                         <span class="info-label">Numéros d'adresses</span>
-                        <span class="info-value">${{(stats.numeros || 0).toLocaleString()}}</span>
+                        <span class="info-value">${{isFiltered ? filteredNumeros.toLocaleString() : (stats.numeros || 0).toLocaleString()}}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">Voies</span>
-                        <span class="info-value">${{(stats.voies || 0).toLocaleString()}}</span>
+                        <span class="info-value">${{isFiltered ? filteredVoies.toLocaleString() : (stats.voies || 0).toLocaleString()}}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">Départements</span>
@@ -716,8 +885,18 @@ app_html = f"""
             `;
         }}
         
+        // === INFO BAR ===
+        function closeInfoBar() {{
+            const infoBar = document.getElementById('infoBar');
+            if (infoBar) {{
+                infoBar.classList.add('hidden');
+                // Ne pas sauvegarder la préférence - réafficher à chaque fois
+            }}
+        }}
+        
         // === INIT ===
         async function init() {{
+            // La barre d'info sera toujours affichée par défaut (pas de vérification localStorage)
             // Load stats
             const stats = await fetchAPI('/api/stats/global');
             if (stats) {{
@@ -892,6 +1071,28 @@ app_html = f"""
                 document.getElementById('searchInput').addEventListener('input', onSearch);
             }}
             
+            // Restaurer les filtres visuellement dans la vue département
+            setTimeout(() => {{
+                // Restaurer le filtre producteur
+                const prodSelect = document.getElementById('producteurSelect');
+                if (prodSelect && selectedProducteur) {{
+                    prodSelect.value = selectedProducteur;
+                }}
+                
+                // Restaurer les chips de statut
+                document.querySelectorAll('.chip').forEach(chip => {{
+                    if (!chip) return;
+                    const statut = chip.getAttribute('data-status');
+                    if (statut && activeStatuts.includes(statut)) {{
+                        chip.classList.add('active');
+                        chip.classList.remove('inactive');
+                    }} else if (statut) {{
+                        chip.classList.remove('active');
+                        chip.classList.add('inactive');
+                    }}
+                }});
+            }}, 50);
+            
             // Update breadcrumb (si existe)
             const breadcrumb = document.getElementById('breadcrumb');
             if (breadcrumb) {{
@@ -924,6 +1125,9 @@ app_html = f"""
             // Load communes
             const communesData = await fetchAPI(`/api/departement/${{code}}/communes`);
             if (communesData) {{
+                // Stocker les données GeoJSON pour les filtres
+                currentDeptCommunesData = communesData;
+                
                 // Stocker TOUTES les communes AVANT d'appliquer les filtres
                 const allCommunes = communesData.features.map(c => c.properties);
                 window._currentDeptCommunes = allCommunes;
@@ -932,9 +1136,13 @@ app_html = f"""
                 showCommunes(communesData);
                 showDeptInfo(code, nom || 'Département ' + code, communesData);
                 
-                // Appliquer seulement les filtres statuts (pas de filtre producteur global)
+                // Appliquer les filtres (statuts + producteur si défini)
                 setTimeout(() => {{
-                    const filtered = allCommunes.filter(c => activeStatuts.includes(c.statut || 'gris'));
+                    let filtered = allCommunes.filter(c => activeStatuts.includes(c.statut || 'gris'));
+                    // Appliquer aussi le filtre producteur si défini
+                    if (selectedProducteur) {{
+                        filtered = filtered.filter(c => c.producteur === selectedProducteur);
+                    }}
                     updateCommunesList(filtered);
                     const countEl = document.getElementById('communesCount');
                     if (countEl) {{
@@ -945,6 +1153,21 @@ app_html = f"""
                     
                     // Appliquer filtres statuts
                     updateDeptFilters();
+                    
+                    // Appliquer le filtre producteur sur la carte si défini
+                    if (selectedProducteur && currentDeptCommunesData) {{
+                        if (communesLayer) {{
+                            map.removeLayer(communesLayer);
+                        }}
+                        const filteredData = {{
+                            type: 'FeatureCollection',
+                            features: currentDeptCommunesData.features.filter(f => {{
+                                const props = f.properties;
+                                return activeStatuts.includes(props.statut || 'gris') && props.producteur === selectedProducteur;
+                            }})
+                        }};
+                        showCommunes(filteredData);
+                    }}
                 }}, 100);
             }}
         }}
@@ -1109,11 +1332,15 @@ app_html = f"""
                 </div>
                 
                 <!-- Filtre producteur -->
-                <div style="padding:8px 16px; background:#fafafa; border-bottom:1px solid #e0e0e0;">
-                    <select id="deptProducteurSelect" onchange="filterDeptCommunes(document.getElementById('deptSearchInput').value, '${{code}}', '${{nom}}')"
-                        style="width:100%; padding:8px 12px; border:2px solid #e0e0e0; border-radius:8px; font-size:12px; background:white;">
+                <div style="padding:8px 16px; background:#fafafa; border-bottom:1px solid #e0e0e0; display:flex; flex-direction:column; gap:8px;">
+                    <select id="deptProducteurSelect" onchange="onDeptProducteurChange(this.value, '${{code}}', '${{nom}}')"
+                        style="width:100%; padding:8px 12px; border:2px solid #e0e0e0; border-radius:8px; font-size:12px; background:white; overflow:hidden; text-overflow:ellipsis;">
                         <option value="">👤 Tous les producteurs</option>
                     </select>
+                    <button onclick="resetDeptFilters('${{code}}', '${{nom}}')" 
+                        style="width:100%; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; border:none; background:#e0e0e0; color:#1a1a1a;">
+                        Réinitialiser
+                    </button>
                 </div>
                 
                 <!-- Titre liste communes -->
@@ -1182,7 +1409,10 @@ app_html = f"""
                         select.appendChild(opt);
                     }});
                     
-                    // Pas de filtre producteur au départ (l'utilisateur choisira)
+                    // Restaurer le filtre producteur si défini globalement
+                    if (selectedProducteur) {{
+                        select.value = selectedProducteur;
+                    }}
                 }}
             }}, 100);
             
@@ -1197,6 +1427,8 @@ app_html = f"""
                 document.getElementById('producteurSelect').addEventListener('change', onProducteurChange);
                 document.getElementById('searchInput').addEventListener('input', onSearch);
             }}
+            // Conserver le filtre producteur si défini dans la vue département
+            // selectedProducteur est déjà conservé globalement
             backToFrance();
         }}
         
@@ -1332,11 +1564,15 @@ app_html = f"""
                 fetchAPI(`/api/producteur/${{encodeURIComponent(selectedProducteur)}}/departements`).then(stats => {{
                     departementsStats = stats || {{}};
                     showDepartements();
-                    showGlobalStats();
+                    showGlobalStats(); // Mettra à jour la barre supérieure avec les stats filtrées
                 }});
             }} else {{
-                showDepartements();
-                showGlobalStats();
+                // Recharger les stats globales si pas de filtre producteur
+                fetchAPI('/api/stats/departements').then(stats => {{
+                    departementsStats = stats || {{}};
+                    showDepartements();
+                    showGlobalStats();
+                }});
             }}
             
             document.getElementById('breadcrumb').innerHTML = `<span class="bc-current">🇫🇷 France</span>`;
@@ -1445,12 +1681,78 @@ app_html = f"""
         async function onProducteurChange(e) {{
             selectedProducteur = e.target.value || null;
             
+            if (currentView === 'departement' && selectedDept) {{
+                // Dans la vue département, filtrer les communes par producteur
+                if (selectedProducteur) {{
+                    const allCommunes = window._currentDeptCommunes || [];
+                    const filtered = allCommunes.filter(c => {{
+                        // Filtrer par producteur ET par statuts actifs
+                        return c.producteur === selectedProducteur && activeStatuts.includes(c.statut || 'gris');
+                    }});
+                    updateCommunesList(filtered);
+                    
+                    // Mettre à jour le compteur
+                    const countEl = document.getElementById('communesCount');
+                    if (countEl) {{
+                        countEl.textContent = `📋 Communes (${{filtered.length}}/${{allCommunes.length}})`;
+                    }}
+                    
+                    // Mettre à jour la carte avec les communes filtrées
+                    if (communesLayer) {{
+                        map.removeLayer(communesLayer);
+                    }}
+                    if (currentDeptCommunesData) {{
+                        const filteredData = {{
+                            type: 'FeatureCollection',
+                            features: currentDeptCommunesData.features.filter(f => {{
+                                const props = f.properties;
+                                return props.producteur === selectedProducteur && activeStatuts.includes(props.statut || 'gris');
+                            }})
+                        }};
+                        showCommunes(filteredData);
+                    }}
+                }} else {{
+                    // Réinitialiser le filtre producteur dans la vue département
+                    const allCommunes = window._currentDeptCommunes || [];
+                    const filtered = allCommunes.filter(c => activeStatuts.includes(c.statut || 'gris'));
+                    updateCommunesList(filtered);
+                    
+                    const countEl = document.getElementById('communesCount');
+                    if (countEl) {{
+                        countEl.textContent = filtered.length !== allCommunes.length 
+                            ? `📋 Communes (${{filtered.length}}/${{allCommunes.length}})` 
+                            : `📋 Communes (${{allCommunes.length}})`;
+                    }}
+                    
+                    // Recharger toutes les communes avec filtres statuts seulement
+                    if (currentDeptCommunesData) {{
+                        if (communesLayer) {{
+                            map.removeLayer(communesLayer);
+                        }}
+                        const filteredData = {{
+                            type: 'FeatureCollection',
+                            features: currentDeptCommunesData.features.filter(f => {{
+                                return activeStatuts.includes(f.properties.statut || 'gris');
+                            }})
+                        }};
+                        showCommunes(filteredData);
+                    }}
+                }}
+                return;
+            }}
+            
+            // Vue France
             if (selectedProducteur) {{
                 // Get stats for this producteur
-                const stats = await fetchAPI(`/api/producteur/${{encodeURIComponent(selectedProducteur)}}/departements`);
-                if (stats) {{
-                    departementsStats = stats;
+                const [deptStats, banStats] = await Promise.all([
+                    fetchAPI(`/api/producteur/${{encodeURIComponent(selectedProducteur)}}/departements`),
+                    fetchAPI(`/api/producteur/${{encodeURIComponent(selectedProducteur)}}/stats`)
+                ]);
+                if (deptStats) {{
+                    departementsStats = deptStats;
+                    filteredBanStats = banStats || null;
                     showDepartements();
+                    showGlobalStats(); // Mettre à jour les stats dans la barre supérieure
                     
                     const prod = producteurs.find(p => p.nom === selectedProducteur);
                     document.getElementById('infoPanel').innerHTML = `
@@ -1483,9 +1785,10 @@ app_html = f"""
                     `;
                 }}
             }} else {{
+                filteredBanStats = null;
                 departementsStats = await fetchAPI('/api/stats/departements') || {{}};
                 showDepartements();
-                backToFrance();
+                showGlobalStats(); // Mettre à jour les stats dans la barre supérieure
             }}
         }}
         
@@ -1507,9 +1810,41 @@ app_html = f"""
             if (currentView === 'france') {{
                 showDepartements();
                 showGlobalStats();
-            }} else if (communesLayer) {{
-                // Re-filter communes
-                selectDepartement(selectedDept, '');
+            }} else if (communesLayer && currentView === 'departement') {{
+                // Re-filter communes dans la vue département
+                const allCommunes = window._currentDeptCommunes || [];
+                const filtered = allCommunes.filter(c => {{
+                    // Appliquer filtres statuts et producteur
+                    const statutOk = activeStatuts.includes(c.statut || 'gris');
+                    const producteurOk = !selectedProducteur || c.producteur === selectedProducteur;
+                    return statutOk && producteurOk;
+                }});
+                updateCommunesList(filtered);
+                
+                // Mettre à jour le compteur
+                const countEl = document.getElementById('communesCount');
+                if (countEl) {{
+                    countEl.textContent = filtered.length !== allCommunes.length 
+                        ? `📋 Communes (${{filtered.length}}/${{allCommunes.length}})` 
+                        : `📋 Communes (${{allCommunes.length}})`;
+                }}
+                
+                // Mettre à jour la carte
+                if (currentDeptCommunesData) {{
+                    if (communesLayer) {{
+                        map.removeLayer(communesLayer);
+                    }}
+                    const filteredData = {{
+                        type: 'FeatureCollection',
+                        features: currentDeptCommunesData.features.filter(f => {{
+                            const props = f.properties;
+                            const statutOk = activeStatuts.includes(props.statut || 'gris');
+                            const producteurOk = !selectedProducteur || props.producteur === selectedProducteur;
+                            return statutOk && producteurOk;
+                        }})
+                    }};
+                    showCommunes(filteredData);
+                }}
             }}
         }}
         
@@ -1591,6 +1926,57 @@ app_html = f"""
                     }}
                 }}
                 
+        // Gérer le changement de producteur dans la vue département
+        async function onDeptProducteurChange(producteur, deptCode, deptNom) {{
+            // Mettre à jour le filtre producteur globalement pour qu'il soit conservé
+            selectedProducteur = producteur || null;
+            
+            // Appliquer le filtre
+            const searchInput = document.getElementById('deptSearchInput');
+            const query = searchInput ? searchInput.value : '';
+            filterDeptCommunes(query, deptCode, deptNom);
+        }}
+        
+        // Réinitialiser les filtres dans la vue département
+        async function resetDeptFilters(deptCode, deptNom) {{
+            // Réinitialiser les filtres
+            selectedProducteur = null;
+            activeStatuts = ['vert', 'orange', 'rouge', 'gris'];
+            
+            // Réinitialiser l'interface
+            const prodSelect = document.getElementById('deptProducteurSelect');
+            if (prodSelect) {{
+                prodSelect.value = '';
+            }}
+            
+            const searchInput = document.getElementById('deptSearchInput');
+            if (searchInput) {{
+                searchInput.value = '';
+            }}
+            
+            // Mettre à jour les filtres de statut visuellement
+            updateDeptFilters();
+            
+            // Recharger les communes sans filtres
+            const communesData = await fetchAPI(`/api/departement/${{deptCode}}/communes`);
+            if (communesData) {{
+                currentDeptCommunesData = communesData;
+                const allCommunes = communesData.features.map(c => c.properties);
+                window._currentDeptCommunes = allCommunes;
+                window._currentDeptTotal = communesData.features.length;
+                
+                // Afficher toutes les communes
+                showCommunes(communesData);
+                updateCommunesList(allCommunes);
+                
+                // Mettre à jour le compteur
+                const countEl = document.getElementById('communesCount');
+                if (countEl) {{
+                    countEl.textContent = `📋 Communes (${{allCommunes.length}})`;
+                }}
+            }}
+        }}
+        
         // Filtre de recherche dans le département
         function filterDeptCommunes(query, deptCode, deptNom) {{
             const communes = window._currentDeptCommunes || [];
@@ -1610,11 +1996,9 @@ app_html = f"""
                 );
             }}
             
-            // Filtre producteur
-            const prodSelect = document.getElementById('deptProducteurSelect');
-            const prodValue = prodSelect ? prodSelect.value : '';
-            if (prodValue) {{
-                filtered = filtered.filter(c => c.producteur === prodValue);
+            // Filtre producteur (utiliser selectedProducteur global)
+            if (selectedProducteur) {{
+                filtered = filtered.filter(c => c.producteur === selectedProducteur);
             }}
             
             updateCommunesList(filtered);
@@ -1625,7 +2009,7 @@ app_html = f"""
                     const props = layer.feature.properties;
                     const matchStatut = activeStatuts.includes(props.statut || 'gris');
                     const matchSearch = !q || props.nom.toLowerCase().includes(q) || props.code.toLowerCase().includes(q);
-                    const matchProd = !prodValue || props.producteur === prodValue;
+                    const matchProd = !selectedProducteur || props.producteur === selectedProducteur;
                     
                     if (matchStatut && matchSearch && matchProd) {{
                         // Commune qui matche : visible normalement
@@ -1702,11 +2086,20 @@ app_html = f"""
                 }}
             }});
             
-            // Reload stats
-            fetchAPI('/api/stats/departements').then(stats => {{
-                departementsStats = stats || {{}};
-                backToFrance();
-            }});
+            // Appliquer selon la vue actuelle
+            if (currentView === 'france') {{
+                // Reload stats pour la vue France
+                fetchAPI('/api/stats/departements').then(stats => {{
+                    departementsStats = stats || {{}};
+                    showDepartements();
+                    showGlobalStats();
+                }});
+            }} else if (currentView === 'departement' && selectedDept) {{
+                // Recharger la vue département avec tous les filtres réinitialisés
+                const deptFeature = departementsData.features.find(f => f.properties.code === selectedDept);
+                const nom = deptFeature ? (deptFeature.properties.nom || departementsStats[selectedDept]?.nom || '') : '';
+                selectDepartement(selectedDept, nom);
+            }}
         }}
         
         
