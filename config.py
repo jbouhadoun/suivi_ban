@@ -18,11 +18,14 @@ MONGODB_PASSWORD = os.getenv("MONGODB_PASSWORD")
 MONGODB_HOST = os.getenv("MONGODB_HOST")
 
 if MONGODB_USER and MONGODB_PASSWORD and MONGODB_HOST:
-    # Construire l'URI depuis les variables séparées
-    MONGODB_URI = f"mongodb+srv://{MONGODB_USER}:{MONGODB_PASSWORD}@{MONGODB_HOST}/{MONGODB_DATABASE}"
+    # Construire l'URI depuis les variables séparées (MongoDB Atlas)
+    # URL encode le password au cas où il contient des caractères spéciaux
+    from urllib.parse import quote_plus
+    encoded_password = quote_plus(MONGODB_PASSWORD)
+    MONGODB_URI = f"mongodb+srv://{MONGODB_USER}:{encoded_password}@{MONGODB_HOST}"
 else:
     # Utiliser MONGODB_URI directement (pour compatibilité locale)
-    MONGODB_URI = os.getenv("MONGODB_URI", f"mongodb://admin:admin123@localhost:27017/{MONGODB_DATABASE}?authSource=admin")
+    MONGODB_URI = os.getenv("MONGODB_URI", f"mongodb://admin:admin123@localhost:27017?authSource=admin")
 
 COLLECTIONS = {
     "communes": "communes",

@@ -4,7 +4,7 @@
 set -e
 
 # Configuration
-IMAGE_NAME="ghcr.io/jbouhadoun/suivi-ban"
+IMAGE_NAME="ghcr.io/jbouhadoun/suivi_ban"
 TAG="${1:-latest}"
 
 echo "🔨 Build de l'image Docker..."
