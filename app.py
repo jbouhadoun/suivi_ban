@@ -492,17 +492,17 @@ app_html = f"""
                 
                 <div class="filter-title" style="margin-top: 16px;">Statuts</div>
                 <div class="status-chips">
-                    <div class="chip chip-vert active" data-status="vert" onclick="toggleStatus('vert')" title="BAL nouveau socle">
-                        <span class="chip-dot"></span> Nouveau
+                    <div class="chip chip-vert active" data-status="vert" onclick="toggleStatus('vert')" title="ID initiés et intégrés">
+                        <span class="chip-dot"></span> ID initiés et intégrés
             </div>
-                    <div class="chip chip-orange active" data-status="orange" onclick="toggleStatus('orange')" title="BAL ancien socle avec identifiant">
-                        <span class="chip-dot"></span> Ancien+ID
+                    <div class="chip chip-orange active" data-status="orange" onclick="toggleStatus('orange')" title="ID initiés à intégrer">
+                        <span class="chip-dot"></span> ID initiés à intégrer
             </div>
-                    <div class="chip chip-rouge active" data-status="rouge" onclick="toggleStatus('rouge')" title="BAL ancien socle sans identifiant">
-                        <span class="chip-dot"></span> Ancien
+                    <div class="chip chip-rouge active" data-status="rouge" onclick="toggleStatus('rouge')" title="ID non initiés">
+                        <span class="chip-dot"></span> ID non initiés
             </div>
-                    <div class="chip chip-gris active" data-status="gris" onclick="toggleStatus('gris')" title="Pas de données">
-                        <span class="chip-dot"></span> Vide
+                    <div class="chip chip-gris active" data-status="gris" onclick="toggleStatus('gris')" title="Sans donnée">
+                        <span class="chip-dot"></span> Sans donnée
             </div>
         </div>
         
@@ -535,23 +535,19 @@ app_html = f"""
     <div class="legend">
         <div class="legend-item">
             <span class="legend-dot" style="background:#2e7d32"></span>
-            <span class="legend-label">Nouveau socle</span>
+            <span class="legend-label">ID initiés et intégrés</span>
         </div>
         <div class="legend-item">
             <span class="legend-dot" style="background:#e65100"></span>
-            <span class="legend-label">Ancien + ID</span>
-        </div>
-        <div class="legend-item">
-            <span class="legend-dot" style="background:#f9a825"></span>
-            <span class="legend-label">Assemblage</span>
+            <span class="legend-label">ID initiés à intégrer</span>
         </div>
         <div class="legend-item">
             <span class="legend-dot" style="background:#c62828"></span>
-            <span class="legend-label">Ancien sans ID</span>
+            <span class="legend-label">ID non initiés</span>
         </div>
         <div class="legend-item">
             <span class="legend-dot" style="background:#616161"></span>
-            <span class="legend-label">Pas de données</span>
+            <span class="legend-label">Sans donnée</span>
         </div>
     </div>
     
@@ -671,28 +667,28 @@ app_html = f"""
                             <span style="width:12px; height:12px; background:${{COLORS.vert}}; border-radius:50%;"></span>
                             <div>
                                 <div style="font-weight:700; color:#2e7d32;">${{filteredStats.vert.toLocaleString()}}</div>
-                                <div style="font-size:10px; color:#2e7d32;">Nouveau socle</div>
+                                <div style="font-size:10px; color:#2e7d32;">ID initiés et intégrés</div>
                             </div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#fff3e0; border-radius:8px; opacity:${{activeStatuts.includes('orange') ? 1 : 0.4}};">
                             <span style="width:12px; height:12px; background:${{COLORS.orange}}; border-radius:50%;"></span>
                             <div>
                                 <div style="font-weight:700; color:#e65100;">${{filteredStats.orange.toLocaleString()}}</div>
-                                <div style="font-size:10px; color:#e65100;">Ancien + ID</div>
+                                <div style="font-size:10px; color:#e65100;">ID initiés à intégrer</div>
                             </div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#ffebee; border-radius:8px; opacity:${{activeStatuts.includes('rouge') ? 1 : 0.4}};">
                             <span style="width:12px; height:12px; background:${{COLORS.rouge}}; border-radius:50%;"></span>
                             <div>
                                 <div style="font-weight:700; color:#c62828;">${{filteredStats.rouge.toLocaleString()}}</div>
-                                <div style="font-size:10px; color:#c62828;">Ancien sans ID</div>
+                                <div style="font-size:10px; color:#c62828;">ID non initiés</div>
                             </div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#f5f5f5; border-radius:8px; opacity:${{activeStatuts.includes('gris') ? 1 : 0.4}}; grid-column: span 2;">
                             <span style="width:12px; height:12px; background:${{COLORS.gris}}; border-radius:50%;"></span>
                             <div>
                                 <div style="font-weight:700; color:#616161;">${{filteredStats.gris.toLocaleString()}}</div>
-                                <div style="font-size:10px; color:#616161;">Pas de données</div>
+                                <div style="font-size:10px; color:#616161;">Sans donnée</div>
                             </div>
                         </div>
                     </div>
@@ -1207,10 +1203,10 @@ app_html = f"""
         function showCommuneInfo(props) {{
             const statut = props.statut || 'gris';
             const statutLabels = {{
-                vert: 'BAL nouveau socle',
-                orange: 'BAL ancien socle (avec ID)',
-                rouge: 'BAL ancien socle (sans ID)',
-                gris: 'Pas de données'
+                vert: 'ID initiés et intégrés',
+                orange: 'ID initiés à intégrer',
+                rouge: 'ID non initiés',
+                gris: 'Sans donnée'
             }};
             
             const sidebar = document.querySelector('.sidebar');
@@ -1527,10 +1523,10 @@ app_html = f"""
             const nom = window._currentDeptNom || '';
             
             const filterData = [
-                {{ key: 'vert', label: 'Nouveau', bg: '#e8f5e9', color: '#2e7d32' }},
-                {{ key: 'orange', label: 'Ancien+ID', bg: '#fff3e0', color: '#e65100' }},
-                {{ key: 'rouge', label: 'Ancien', bg: '#ffebee', color: '#c62828' }},
-                {{ key: 'gris', label: 'Vide', bg: '#f5f5f5', color: '#616161' }}
+                {{ key: 'vert', label: 'ID initiés et intégrés', bg: '#e8f5e9', color: '#2e7d32' }},
+                {{ key: 'orange', label: 'ID initiés à intégrer', bg: '#fff3e0', color: '#e65100' }},
+                {{ key: 'rouge', label: 'ID non initiés', bg: '#ffebee', color: '#c62828' }},
+                {{ key: 'gris', label: 'Sans donnée', bg: '#f5f5f5', color: '#616161' }}
             ];
             
             container.innerHTML = filterData.map(f => {{
