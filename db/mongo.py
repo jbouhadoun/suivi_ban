@@ -66,6 +66,10 @@ def init_indexes():
     voies.create_index("code_commune")
     voies.create_index("ban_id")
     
+    # Index departements
+    departements = db[COLLECTIONS["departements"]]
+    departements.create_index("code", unique=True)
+    
     logger.info("Index MongoDB crees")
 
 
@@ -165,6 +169,76 @@ def get_stats_departements():
             }
     
     return results
+
+
+def update_departements_stats():
+    """Met à jour les statistiques des départements dans la collection departements"""
+    departements = get_collection("departements")
+    stats = get_stats_departements()
+    
+    updated = 0
+    for code, stat_data in stats.items():
+        if not code:
+            continue
+        
+        total = stat_data.get("total", 0) or 1
+        vert = stat_data.get("vert", 0)
+        orange = stat_data.get("orange", 0)
+        rouge = stat_data.get("rouge", 0)
+        jaune = stat_data.get("jaune", 0)
+        gris = stat_data.get("gris", 0)
+        
+        # Calculer les pourcentages
+        pct_vert = round(vert / total * 100, 1) if total > 0 else 0
+        pct_orange = round(orange / total * 100, 1) if total > 0 else 0
+        pct_rouge = round(rouge / total * 100, 1) if total > 0 else 0
+        pct_jaune = round(jaune / total * 100, 1) if total > 0 else 0
+        
+        # Déterminer la couleur majoritaire
+        max_count = max(orange, vert, rouge, jaune, gris)
+        if orange == max_count:
+            couleur_majoritaire = "orange"
+            couleur_hex = "#ff8800"
+        elif vert == max_count:
+            couleur_majoritaire = "vert"
+            couleur_hex = "#00A86B"
+        elif rouge == max_count:
+            couleur_majoritaire = "rouge"
+            couleur_hex = "#DC143C"
+        elif jaune == max_count:
+            couleur_majoritaire = "jaune"
+            couleur_hex = "#FFD700"
+        else:
+            couleur_majoritaire = "gris"
+            couleur_hex = "#808080"
+        
+        # Mettre à jour le département avec les stats (format compatible avec departements_with_stats.geojson)
+        departements.update_one(
+            {"code": code},
+            {
+                "$set": {
+                    "stats": {
+                        "total": stat_data.get("total", 0),
+                        "vert": vert,
+                        "orange": orange,
+                        "rouge": rouge,
+                        "jaune": jaune,
+                        "gris": gris,
+                        "pct_vert": pct_vert,
+                        "pct_orange": pct_orange,
+                        "pct_rouge": pct_rouge,
+                        "pct_jaune": pct_jaune,
+                        "couleur_majoritaire": couleur_majoritaire,
+                        "couleur_hex": couleur_hex
+                    },
+                    "stats_updated_at": datetime.utcnow()
+                }
+            }
+        )
+        updated += 1
+    
+    logger.info(f"Stats mises à jour pour {updated} départements")
+    return updated
 
 
 def get_communes_by_departement(code_dept):
@@ -302,6 +376,193 @@ def search_communes(query, limit=20):
         }
         for doc in cursor
     ]
+
+
+def load_departements_from_geojson_file():
+    """Charge les départements depuis le fichier departements_with_stats.geojson s'il existe"""
+    from config import CACHE_DIR
+    import json
+    
+    geojson_path = CACHE_DIR / "departements_with_stats.geojson"
+    
+    if not geojson_path.exists():
+        return 0
+    
+    try:
+        departements = get_collection("departements")
+        
+        with open(geojson_path, 'r', encoding='utf-8') as f:
+            geojson_data = json.load(f)
+        
+        loaded = 0
+        for feature in geojson_data.get("features", []):
+            props = feature.get("properties", {})
+            code = props.get("code")
+            if not code:
+                continue
+            
+            # Extraire les stats depuis les properties
+            stats = {
+                "total": props.get("total_communes", 0),
+                "vert": props.get("communes_vertes", 0),
+                "orange": props.get("communes_oranges", 0),
+                "rouge": props.get("communes_rouges", 0),
+                "jaune": props.get("communes_jaunes", 0),
+                "gris": props.get("communes_grises", 0),
+                "pct_vert": props.get("pct_vert", 0),
+                "pct_orange": props.get("pct_orange", 0),
+                "pct_rouge": props.get("pct_rouge", 0),
+                "pct_jaune": props.get("pct_jaune", 0),
+                "couleur_majoritaire": props.get("couleur_majoritaire", "gris"),
+                "couleur_hex": props.get("couleur_hex", "#808080")
+            }
+            
+            # Stocker dans MongoDB
+            departements.update_one(
+                {"code": code},
+                {
+                    "$set": {
+                        "code": code,
+                        "nom": props.get("nom", f"Département {code}"),
+                        "geometry": feature.get("geometry"),
+                        "stats": stats,
+                        "loaded_at": datetime.utcnow(),
+                        "loaded_from": "geojson_file"
+                    }
+                },
+                upsert=True
+            )
+            loaded += 1
+        
+        logger.info(f"{loaded} départements chargés depuis {geojson_path}")
+        return loaded
+    except Exception as e:
+        logger.warning(f"Erreur chargement depuis fichier GeoJSON: {e}")
+        return 0
+
+
+def load_departements_from_api():
+    """Charge les départements depuis l'API geo.api.gouv.fr et les stocke dans MongoDB"""
+    import requests
+    from config import API_GEO
+    
+    departements = get_collection("departements")
+    
+    try:
+        # Récupérer la liste des départements
+        response = requests.get(f"{API_GEO}/departements", timeout=30)
+        response.raise_for_status()
+        depts_data = response.json()
+        
+        loaded = 0
+        for dept in depts_data:
+            code = dept.get("code")
+            if not code:
+                continue
+            
+            # Récupérer le contour du département
+            try:
+                dept_response = requests.get(
+                    f"{API_GEO}/departements/{code}",
+                    params={"fields": "nom,code,contour"},
+                    timeout=30
+                )
+                dept_response.raise_for_status()
+                dept_detail = dept_response.json()
+                
+                # Stocker dans MongoDB (sans stats, elles seront calculées après)
+                departements.update_one(
+                    {"code": code},
+                    {
+                        "$set": {
+                            "code": code,
+                            "nom": dept_detail.get("nom", dept.get("nom", f"Département {code}")),
+                            "geometry": dept_detail.get("contour"),
+                            "loaded_at": datetime.utcnow(),
+                            "loaded_from": "api"
+                        }
+                    },
+                    upsert=True
+                )
+                loaded += 1
+            except Exception as e:
+                logger.warning(f"Erreur chargement département {code}: {e}")
+                continue
+        
+        logger.info(f"{loaded} départements chargés dans MongoDB depuis l'API")
+        return loaded
+    except Exception as e:
+        logger.error(f"Erreur chargement départements: {e}")
+        return 0
+
+
+def get_departements_geojson():
+    """Retourne le GeoJSON des départements depuis MongoDB avec les stats dans les properties"""
+    departements = get_collection("departements")
+    
+    features = []
+    for doc in departements.find({}):
+        if not doc.get("code"):
+            continue
+        
+        # Récupérer les stats si elles existent
+        stats = doc.get("stats", {})
+        
+        # Construire les properties au format attendu (comme departements_with_stats.geojson)
+        properties = {
+            "code": doc.get("code"),
+            "nom": doc.get("nom", f"Département {doc.get('code')}"),
+            "total_communes": stats.get("total", 0),
+            "communes_vertes": stats.get("vert", 0),
+            "communes_oranges": stats.get("orange", 0),
+            "communes_rouges": stats.get("rouge", 0),
+            "communes_jaunes": stats.get("jaune", 0),
+            "communes_grises": stats.get("gris", 0),
+            "pct_vert": stats.get("pct_vert", 0),
+            "pct_orange": round(stats.get("orange", 0) / (stats.get("total", 1) or 1) * 100, 1),
+            "pct_rouge": round(stats.get("rouge", 0) / (stats.get("total", 1) or 1) * 100, 1),
+            "pct_jaune": round(stats.get("jaune", 0) / (stats.get("total", 1) or 1) * 100, 1)
+        }
+        
+        # Déterminer la couleur majoritaire
+        if stats.get("total", 0) > 0:
+            max_count = max(
+                stats.get("orange", 0),
+                stats.get("vert", 0),
+                stats.get("rouge", 0),
+                stats.get("jaune", 0),
+                stats.get("gris", 0)
+            )
+            if stats.get("orange", 0) == max_count:
+                properties["couleur_majoritaire"] = "orange"
+                properties["couleur_hex"] = "#ff8800"
+            elif stats.get("vert", 0) == max_count:
+                properties["couleur_majoritaire"] = "vert"
+                properties["couleur_hex"] = "#00A86B"
+            elif stats.get("rouge", 0) == max_count:
+                properties["couleur_majoritaire"] = "rouge"
+                properties["couleur_hex"] = "#DC143C"
+            elif stats.get("jaune", 0) == max_count:
+                properties["couleur_majoritaire"] = "jaune"
+                properties["couleur_hex"] = "#FFD700"
+            else:
+                properties["couleur_majoritaire"] = "gris"
+                properties["couleur_hex"] = "#808080"
+        else:
+            properties["couleur_majoritaire"] = "gris"
+            properties["couleur_hex"] = "#808080"
+        
+        feature = {
+            "type": "Feature",
+            "properties": properties,
+            "geometry": doc.get("geometry")
+        }
+        features.append(feature)
+    
+    return {
+        "type": "FeatureCollection",
+        "features": features
+    }
 
 
 def log_update(started_at, finished_at, communes_updated, errors, status, error_message=None):

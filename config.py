@@ -32,7 +32,8 @@ COLLECTIONS = {
     "revisions": "revisions",
     "voies": "voies",
     "update_logs": "update_logs",
-    "config": "config"
+    "config": "config",
+    "departements": "departements"
 }
 
 # APIs externes

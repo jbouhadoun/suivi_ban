@@ -17,7 +17,7 @@ from db.mongo import (
     get_db, get_collection,
     get_stats_global, get_stats_departements,
     get_communes_by_departement, get_producteurs,
-    search_communes
+    search_communes, get_departements_geojson
 )
 
 app = FastAPI(title="Suivi BAN API", version="2.0.0")
@@ -53,15 +53,23 @@ def health_check():
 
 
 @app.get("/api/departements")
-def get_departements_geojson():
-    """Retourne le GeoJSON des departements"""
+def api_departements_geojson():
+    """Retourne le GeoJSON des departements depuis MongoDB"""
     if "departements" not in _cache:
-        geojson_path = CACHE_DIR / "departements_with_stats.geojson"
-        if geojson_path.exists():
-            with open(geojson_path, 'r', encoding='utf-8') as f:
-                _cache["departements"] = json.load(f)
-        else:
-            return JSONResponse(status_code=404, content={"error": "GeoJSON non trouve"})
+        try:
+            geojson = get_departements_geojson()
+            _cache["departements"] = geojson
+        except Exception as e:
+            # Fallback sur fichier si erreur
+            geojson_path = CACHE_DIR / "departements_with_stats.geojson"
+            if geojson_path.exists():
+                with open(geojson_path, 'r', encoding='utf-8') as f:
+                    _cache["departements"] = json.load(f)
+            else:
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": f"Erreur récupération départements: {str(e)}"}
+                )
     
     return _cache["departements"]
 

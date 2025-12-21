@@ -13,7 +13,8 @@ from config import (
     COLLECT_WINDOW_DAYS, API_TIMEOUT, COLLECT_WORKERS
 )
 from db.mongo import (
-    upsert_commune, upsert_revision, get_collection, log_update
+    upsert_commune, upsert_revision, get_collection, log_update,
+    update_departements_stats
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -312,6 +313,13 @@ def run_smart_collect():
             total_processed = updated + skipped + errors
             if total_processed % 100 == 0:
                 logger.info(f"Progression: {total_processed}/{len(communes_to_check)} (mises a jour: {updated}, skip: {skipped}, erreurs: {errors})")
+    
+    # Mettre à jour les stats des départements
+    logger.info("Mise à jour des statistiques des départements...")
+    try:
+        update_departements_stats()
+    except Exception as e:
+        logger.warning(f"Erreur lors de la mise à jour des stats départements: {e}")
     
     # Enregistrer le log
     finished_time = datetime.now()
