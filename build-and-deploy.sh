@@ -29,3 +29,4 @@ echo "📍 Pour accéder à l'app:"
 echo "   kubectl port-forward svc/suivi-ban 8501:8501 -n ban"
 echo "   Puis ouvrir http://localhost:8501"
 
+

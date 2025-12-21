@@ -224,9 +224,6 @@ app_html = f"""
         .chip-rouge {{ background: #ffebee; color: #c62828; }}
         .chip-rouge .chip-dot {{ background: #c62828; }}
         
-        .chip-jaune {{ background: #fffde7; color: #f9a825; }}
-        .chip-jaune .chip-dot {{ background: #f9a825; }}
-        
         .chip-gris {{ background: #f5f5f5; color: #616161; }}
         .chip-gris .chip-dot {{ background: #616161; }}
         
@@ -504,13 +501,11 @@ app_html = f"""
                     <div class="chip chip-rouge active" data-status="rouge" onclick="toggleStatus('rouge')" title="BAL ancien socle sans identifiant">
                         <span class="chip-dot"></span> Ancien
             </div>
-                    <div class="chip chip-jaune active" data-status="jaune" onclick="toggleStatus('jaune')" title="Assemblage">
-                        <span class="chip-dot"></span> Assemblage
-            </div>
                     <div class="chip chip-gris active" data-status="gris" onclick="toggleStatus('gris')" title="Pas de données">
                         <span class="chip-dot"></span> Vide
+            </div>
         </div>
-        </div>
+        
         
                 <div class="btn-group">
             <button class="btn btn-secondary" onclick="resetFilters()">Réinitialiser</button>
@@ -580,11 +575,12 @@ app_html = f"""
         let currentView = 'france';
         let selectedDept = null;
         let selectedProducteur = null;
-        let activeStatuts = ['vert', 'orange', 'rouge', 'jaune', 'gris'];
+        let activeStatuts = ['vert', 'orange', 'rouge', 'gris'];
         
         let departementsData = null;
         let departementsStats = {{}};
         let producteurs = [];
+        let searchTimeout = null;
         
         let departementsLayer = null;
         let communesLayer = null;
@@ -640,7 +636,7 @@ app_html = f"""
             
             // Calculer les stats filtrées
             let filteredTotal = 0;
-            let filteredStats = {{ vert: 0, orange: 0, rouge: 0, jaune: 0, gris: 0 }};
+            let filteredStats = {{ vert: 0, orange: 0, rouge: 0, gris: 0 }};
             
             // Utiliser departementsStats pour calculer les totaux filtrés
             Object.values(departementsStats).forEach(dept => {{
@@ -650,7 +646,7 @@ app_html = f"""
                 }});
             }});
             
-            const isFiltered = activeStatuts.length < 5;
+            const isFiltered = activeStatuts.length < 4;
             
             document.getElementById('infoPanel').innerHTML = `
                 <div class="card" style="background: linear-gradient(135deg, #000091 0%, #1212ff 100%); color: white; padding: 20px;">
@@ -665,7 +661,6 @@ app_html = f"""
                         <div style="display:flex; height:20px; border-radius:10px; overflow:hidden;">
                             ${{activeStatuts.includes('vert') ? `<div style="width:${{(filteredStats.vert / filteredTotal * 100) || 0}}%; background:${{COLORS.vert}};"></div>` : ''}}
                             ${{activeStatuts.includes('orange') ? `<div style="width:${{(filteredStats.orange / filteredTotal * 100) || 0}}%; background:${{COLORS.orange}};"></div>` : ''}}
-                            ${{activeStatuts.includes('jaune') ? `<div style="width:${{(filteredStats.jaune / filteredTotal * 100) || 0}}%; background:${{COLORS.jaune}};"></div>` : ''}}
                             ${{activeStatuts.includes('rouge') ? `<div style="width:${{(filteredStats.rouge / filteredTotal * 100) || 0}}%; background:${{COLORS.rouge}};"></div>` : ''}}
                             ${{activeStatuts.includes('gris') ? `<div style="width:${{(filteredStats.gris / filteredTotal * 100) || 0}}%; background:${{COLORS.gris}};"></div>` : ''}}
                         </div>
@@ -691,13 +686,6 @@ app_html = f"""
                             <div>
                                 <div style="font-weight:700; color:#c62828;">${{filteredStats.rouge.toLocaleString()}}</div>
                                 <div style="font-size:10px; color:#c62828;">Ancien sans ID</div>
-                            </div>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#fffde7; border-radius:8px; opacity:${{activeStatuts.includes('jaune') ? 1 : 0.4}};">
-                            <span style="width:12px; height:12px; background:${{COLORS.jaune}}; border-radius:50%;"></span>
-                            <div>
-                                <div style="font-weight:700; color:#f9a825;">${{filteredStats.jaune.toLocaleString()}}</div>
-                                <div style="font-size:10px; color:#f9a825;">Assemblage</div>
                             </div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#f5f5f5; border-radius:8px; opacity:${{activeStatuts.includes('gris') ? 1 : 0.4}}; grid-column: span 2;">
@@ -805,7 +793,6 @@ app_html = f"""
                             vert: Math.round((stats.vert || 0) / stats.total * 100),
                             orange: Math.round((stats.orange || 0) / stats.total * 100),
                             rouge: Math.round((stats.rouge || 0) / stats.total * 100),
-                            jaune: Math.round((stats.jaune || 0) / stats.total * 100),
                             gris: Math.round((stats.gris || 0) / stats.total * 100)
                         }};
                         layer.bindTooltip(`
@@ -813,14 +800,12 @@ app_html = f"""
                             <div style="display:flex; height:10px; width:140px; border-radius:5px; overflow:hidden; margin:6px 0; border:1px solid #ddd;">
                                 <div style="width:${{pcts.vert}}%; background:${{COLORS.vert}};"></div>
                                 <div style="width:${{pcts.orange}}%; background:${{COLORS.orange}};"></div>
-                                <div style="width:${{pcts.jaune}}%; background:${{COLORS.jaune}};"></div>
                                 <div style="width:${{pcts.rouge}}%; background:${{COLORS.rouge}};"></div>
                                 <div style="width:${{pcts.gris}}%; background:${{COLORS.gris}};"></div>
                             </div>
                             <span style="color:#2e7d32">●</span> ${{pcts.vert}}%
                             <span style="color:#e65100">●</span> ${{pcts.orange}}%
                             <span style="color:#c62828">●</span> ${{pcts.rouge}}%
-                            <span style="color:#f9a825">●</span> ${{pcts.jaune}}%
                             <span style="color:#616161">●</span> ${{pcts.gris}}%
                         `, {{ sticky: true }});
                     }} else {{
@@ -842,7 +827,6 @@ app_html = f"""
             const statuts = [
                 {{ key: 'vert', value: stats.vert || 0, color: COLORS.vert }},
                 {{ key: 'orange', value: stats.orange || 0, color: COLORS.orange }},
-                {{ key: 'jaune', value: stats.jaune || 0, color: COLORS.jaune }},
                 {{ key: 'rouge', value: stats.rouge || 0, color: COLORS.rouge }},
                 {{ key: 'gris', value: stats.gris || 0, color: COLORS.gris }}
             ].filter(s => activeStatuts.includes(s.key))
@@ -877,7 +861,7 @@ app_html = f"""
         // Trouve la couleur dominante SANS filtre (tous statuts)
         function getOriginalDominant(stats) {{
             let max = 0, dominant = 'gris';
-            ['vert', 'orange', 'rouge', 'jaune', 'gris'].forEach(s => {{
+            ['vert', 'orange', 'rouge', 'gris'].forEach(s => {{
                 if ((stats[s] || 0) > max) {{
                     max = stats[s];
                     dominant = s;
@@ -944,8 +928,28 @@ app_html = f"""
             // Load communes
             const communesData = await fetchAPI(`/api/departement/${{code}}/communes`);
             if (communesData) {{
+                // Stocker TOUTES les communes AVANT d'appliquer les filtres
+                const allCommunes = communesData.features.map(c => c.properties);
+                window._currentDeptCommunes = allCommunes;
+                window._currentDeptTotal = communesData.features.length;
+                
                 showCommunes(communesData);
                 showDeptInfo(code, nom || 'Département ' + code, communesData);
+                
+                // Appliquer seulement les filtres statuts (pas de filtre producteur global)
+                setTimeout(() => {{
+                    const filtered = allCommunes.filter(c => activeStatuts.includes(c.statut || 'gris'));
+                    updateCommunesList(filtered);
+                    const countEl = document.getElementById('communesCount');
+                    if (countEl) {{
+                        countEl.textContent = filtered.length !== allCommunes.length 
+                            ? `📋 Communes (${{filtered.length}}/${{allCommunes.length}})` 
+                            : `📋 Communes (${{allCommunes.length}})`;
+                    }}
+                    
+                    // Appliquer filtres statuts
+                    updateDeptFilters();
+                }}, 100);
             }}
         }}
         
@@ -959,27 +963,73 @@ app_html = f"""
                 map.removeLayer(communesLayer);
             }}
             
+            // Afficher TOUTES les communes du département (filtrées seulement par statut)
+            // Le filtrage par producteur se fera par style (opacité) dans filterByProducteur
             communesLayer = L.geoJSON(data, {{
                 filter: feature => activeStatuts.includes(feature.properties.statut || 'gris'),
                 style: feature => {{
-                    const statut = feature.properties.statut || 'gris';
+                    const props = feature.properties;
+                    const statut = props.statut || 'gris';
+                    
+                    // Style simple : toutes les communes visibles normalement
                     return {{
                         fillColor: COLORS[statut] || COLORS.gris,
                         color: '#fff',
                         weight: 1,
-                        fillOpacity: 0.7
+                        fillOpacity: 0.7,
+                        opacity: 1
                     }};
                 }},
                 onEachFeature: (feature, layer) => {{
                     const p = feature.properties;
                     
+                    // Style simple : toujours visible normalement
+                    const statut = p.statut || 'gris';
+                    const initialStyle = {{
+                        fillColor: COLORS[statut] || COLORS.gris,
+                        color: '#fff',
+                        weight: 1,
+                        fillOpacity: 0.7,
+                        opacity: 1
+                    }};
+                    
                     layer.on('mouseover', e => {{
-                        e.target.setStyle({{ weight: 3, color: '#000091', fillOpacity: 0.85 }});
+                        // Survol : accentuer seulement le contour en bleu, garder la couleur de fond
+                        const opts = e.target.options;
+                        e.target.setStyle({{
+                            fillColor: opts.fillColor || initialStyle.fillColor,
+                            color: '#000091',
+                            weight: 3,
+                            fillOpacity: opts.fillOpacity !== undefined ? opts.fillOpacity : initialStyle.fillOpacity,
+                            opacity: 1
+                        }});
                     }});
                     
-                    layer.on('mouseout', e => communesLayer.resetStyle(e.target));
+                    layer.on('mouseout', e => {{
+                        // Restaurer le style depuis les options (mis à jour par filterDeptCommunes)
+                        const opts = e.target.options;
+                        e.target.setStyle({{
+                            fillColor: opts.fillColor || initialStyle.fillColor,
+                            color: '#fff',
+                            weight: 1,
+                            fillOpacity: opts.fillOpacity !== undefined ? opts.fillOpacity : initialStyle.fillOpacity,
+                            opacity: opts.opacity !== undefined ? opts.opacity : initialStyle.opacity
+                        }});
+                    }});
                     
-                    layer.on('click', () => showCommuneInfo(p));
+                    layer.on('click', () => {{
+                        // Zoom sur la commune
+                        if (p.lat && p.lon) {{
+                            map.setView([p.lat, p.lon], 14);
+                        }} else {{
+                            // Sinon, zoomer sur les bounds de la commune
+                            const bounds = layer.getBounds();
+                            if (bounds && bounds.isValid()) {{
+                                map.fitBounds(bounds, {{ padding: [50, 50] }});
+                            }}
+                        }}
+                        showCommuneInfo(p);
+                    }});
                     
                     layer.bindTooltip(`<b>${{p.nom}}</b>`, {{ sticky: true }});
                 }}
@@ -998,14 +1048,22 @@ app_html = f"""
             
             const total = communes.length;
             
-            // Filtrer les communes selon les statuts actifs
-            const filteredCommunes = communes
-                .map(c => c.properties)
-                .filter(c => activeStatuts.includes(c.statut || 'gris'));
+            // Convertir toutes les communes en propriétés (SANS filtrer)
+            const allCommunesProps = communes.map(c => c.properties);
+            
+            // Stocker TOUTES les communes (non filtrées) pour les filtres
+            // Utiliser les communes déjà stockées dans selectDepartement si disponibles
+            if (!window._currentDeptCommunes || window._currentDeptCommunes.length === 0) {{
+                window._currentDeptCommunes = allCommunesProps;
+                window._currentDeptTotal = total;
+            }}
+            
+            // Filtrer les communes selon les statuts actifs pour l'affichage initial
+            const filteredCommunes = allCommunesProps.filter(c => activeStatuts.includes(c.statut || 'gris'));
             
             const filteredCount = filteredCommunes.length;
             
-            // Sort by population desc
+            // Sort by population desc (sur les communes filtrées pour l'affichage)
             const sorted = filteredCommunes
                 .sort((a, b) => (b.population || 0) - (a.population || 0));
             
@@ -1024,7 +1082,7 @@ app_html = f"""
                             <div style="flex:1;">
                                 <div class="commune-name">${{c.nom}}</div>
                                 <div style="font-size:11px; color:#888;">${{c.code}}</div>
-                            </div>
+                </div>
                         </div>
                     `;
                 }});
@@ -1056,7 +1114,7 @@ app_html = f"""
                 
                 <!-- Filtre producteur -->
                 <div style="padding:8px 16px; background:#fafafa; border-bottom:1px solid #e0e0e0;">
-                    <select id="deptProducteurSelect" onchange="filterByProducteur(this.value, '${{code}}', '${{nom}}')"
+                    <select id="deptProducteurSelect" onchange="filterDeptCommunes(document.getElementById('deptSearchInput').value, '${{code}}', '${{nom}}')"
                         style="width:100%; padding:8px 12px; border:2px solid #e0e0e0; border-radius:8px; font-size:12px; background:white;">
                         <option value="">👤 Tous les producteurs</option>
                     </select>
@@ -1076,27 +1134,59 @@ app_html = f"""
                     </div>
                 `;
             
-            // Stocker les communes et infos pour les filtres
-            window._currentDeptCommunes = sorted;
-            window._currentDeptTotal = total;
+            // Stocker les infos du département
             window._currentDeptCode = code;
             window._currentDeptNom = nom;
             window._currentDeptStats = stats;
             
+            // Réinitialiser le filtre département (ne pas conserver le filtre France)
+            window._currentDeptProducteur = null;
+            
+            // S'assurer qu'on a bien toutes les communes stockées (ne pas écraser si déjà rempli)
+            if (!window._currentDeptCommunes || window._currentDeptCommunes.length === 0) {{
+                window._currentDeptCommunes = allCommunesProps;
+                window._currentDeptTotal = total;
+            }}
+            
+            // Utiliser toutes les communes stockées
+            const allCommunes = window._currentDeptCommunes;
+            const totalCommunes = window._currentDeptTotal || total;
+            
+            // Appliquer seulement les filtres statuts (pas de filtre producteur au départ)
+            let initialFiltered = allCommunes.filter(c => activeStatuts.includes(c.statut || 'gris'));
+            
+            // Mettre à jour la liste avec les communes filtrées
+            updateCommunesList(initialFiltered);
+            
+            // Mettre à jour le compteur
+            const countEl = document.getElementById('communesCount');
+            if (countEl) {{
+                countEl.textContent = initialFiltered.length !== totalCommunes 
+                    ? `📋 Communes (${{initialFiltered.length}}/${{totalCommunes}})` 
+                    : `📋 Communes (${{totalCommunes}})`;
+            }}
+            
             // Créer les filtres dynamiquement
             setTimeout(() => updateDeptFilters(), 50);
             
-            // Remplir le select producteurs avec les producteurs du département
+            // Remplir le select producteurs avec TOUS les producteurs du département (pas seulement ceux filtrés)
             setTimeout(() => {{
-                const producteursInDept = [...new Set(sorted.filter(c => c.producteur).map(c => c.producteur))].sort();
+                // Utiliser toutes les communes stockées, pas seulement celles filtrées
+                const allCommunesForProd = window._currentDeptCommunes || allCommunesProps;
+                const producteursInDept = [...new Set(allCommunesForProd.filter(c => c.producteur).map(c => c.producteur))].sort();
                 const select = document.getElementById('deptProducteurSelect');
                 if (select) {{
+                    // Vider le select avant de le remplir
+                    select.innerHTML = '<option value="">👤 Tous les producteurs</option>';
+                    
                     producteursInDept.forEach(p => {{
                         const opt = document.createElement('option');
                         opt.value = p;
                         opt.textContent = p;
                         select.appendChild(opt);
                     }});
+                    
+                    // Pas de filtre producteur au départ (l'utilisateur choisira)
                 }}
             }}, 100);
             
@@ -1120,7 +1210,6 @@ app_html = f"""
                 vert: 'BAL nouveau socle',
                 orange: 'BAL ancien socle (avec ID)',
                 rouge: 'BAL ancien socle (sans ID)',
-                jaune: 'Assemblage',
                 gris: 'Pas de données'
             }};
             
@@ -1182,7 +1271,7 @@ app_html = f"""
                         ` : ''}}
                     </div>
                     
-                    ${{props.producteur || props.date_publication ? `
+                    ${{props.producteur || props.date_revision ? `
                     <!-- Producteur -->
                     <div class="card">
                         <h3 style="font-size:14px;">👤 Producteur</h3>
@@ -1192,10 +1281,10 @@ app_html = f"""
                             <span class="info-value">${{props.producteur}}</span>
                         </div>
                         ` : ''}}
-                        ${{props.date_publication ? `
+                        ${{props.date_revision ? `
                         <div class="info-row">
-                            <span class="info-label">Publication</span>
-                            <span class="info-value">${{props.date_publication.split('T')[0]}}</span>
+                            <span class="info-label">Date de publication</span>
+                            <span class="info-value">${{typeof props.date_revision === 'string' ? props.date_revision.split('T')[0] : props.date_revision}}</span>
                         </div>
                         ` : ''}}
                     </div>
@@ -1210,7 +1299,6 @@ app_html = f"""
             selectedDept = null;
             
             map.setView([46.603354, 1.888334], 6);
-            showDepartements();
             
             // Vérifier si on doit restaurer le sidebar
             if (window._originalSidebarContent) {{
@@ -1221,10 +1309,41 @@ app_html = f"""
                 document.getElementById('searchInput').addEventListener('input', onSearch);
             }}
             
-            document.getElementById('breadcrumb').innerHTML = `<span class="bc-current">🇫🇷 France</span>`;
+            // Restaurer les filtres dans l'interface
+            setTimeout(() => {{
+                // Restaurer le filtre producteur
+                const prodSelect = document.getElementById('producteurSelect');
+                if (prodSelect && selectedProducteur) {{
+                    prodSelect.value = selectedProducteur;
+                }}
+                
+                // Restaurer les chips de statut
+                document.querySelectorAll('.chip').forEach(chip => {{
+                    if (!chip) return;
+                    const statut = chip.getAttribute('data-status');
+                    if (statut && activeStatuts.includes(statut)) {{
+                        chip.classList.add('active');
+                        chip.classList.remove('inactive');
+                    }} else if (statut) {{
+                        chip.classList.remove('active');
+                        chip.classList.add('inactive');
+                }}
+            }});
+            }}, 50);
             
-            // Afficher les stats globales
-            showGlobalStats();
+            // Recharger les stats si filtre producteur actif
+            if (selectedProducteur) {{
+                fetchAPI(`/api/producteur/${{encodeURIComponent(selectedProducteur)}}/departements`).then(stats => {{
+                    departementsStats = stats || {{}};
+                    showDepartements();
+                    showGlobalStats();
+                }});
+            }} else {{
+                showDepartements();
+                showGlobalStats();
+            }}
+            
+            document.getElementById('breadcrumb').innerHTML = `<span class="bc-current">🇫🇷 France</span>`;
         }}
         
         async function goToCommune(code) {{
@@ -1236,42 +1355,55 @@ app_html = f"""
         }}
         
         // === SEARCH ===
-        let searchTimeout = null;
-        
         async function onSearch(e) {{
             const query = e.target.value.trim();
             const resultsDiv = document.getElementById('searchResults');
             
+            if (!resultsDiv) return;
+            
             if (query.length < 2) {{
                 resultsDiv.classList.remove('active');
+                resultsDiv.innerHTML = '';
                 return;
             }}
             
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(async () => {{
-                const results = await fetchAPI(`/api/search/communes?q=${{encodeURIComponent(query)}}`);
-                
-                if (!results || results.length === 0) {{
-                    resultsDiv.innerHTML = '<div class="search-result"><span>Aucun résultat</span></div>';
-                }} else {{
-                    resultsDiv.innerHTML = results.map(r => `
-                        <div class="search-result" onclick="selectSearchResult('${{r.code}}', ${{r.lat}}, ${{r.lon}})">
-                            <span class="result-dot" style="background:${{COLORS[r.statut] || COLORS.gris}}"></span>
-                            <div class="result-info">
-                                <div class="result-name">${{r.nom}}</div>
-                                <div class="result-meta">${{r.dept}} - ${{r.dept_nom}}</div>
+                try {{
+                    const results = await fetchAPI(`/api/search?q=${{encodeURIComponent(query)}}`);
+                    
+                    if (!results || results.length === 0) {{
+                        resultsDiv.innerHTML = '<div class="search-result"><span>Aucun résultat</span></div>';
+                    }} else {{
+                        resultsDiv.innerHTML = results.map(r => `
+                            <div class="search-result" onclick="selectSearchResult('${{r.code}}', ${{r.lat || 0}}, ${{r.lon || 0}})">
+                                <span class="result-dot" style="background:${{COLORS[r.statut] || COLORS.gris}}"></span>
+                                <div class="result-info">
+                                    <div class="result-name">${{r.nom}}</div>
+                                    <div class="result-meta">${{r.dept || ''}} - ${{r.dept_nom || ''}}</div>
+                                </div>
                             </div>
-                        </div>
-                    `).join('');
+                        `).join('');
+                    }}
+                    
+                    resultsDiv.classList.add('active');
+                }} catch (error) {{
+                    console.error('Erreur recherche:', error);
+                    resultsDiv.innerHTML = '<div class="search-result"><span>Erreur lors de la recherche</span></div>';
+                    resultsDiv.classList.add('active');
                 }}
-                
-                resultsDiv.classList.add('active');
             }}, 300);
         }}
         
         async function selectSearchResult(code, lat, lon) {{
-            document.getElementById('searchResults').classList.remove('active');
-            document.getElementById('searchInput').value = '';
+            const searchResults = document.getElementById('searchResults');
+            if (searchResults) {{
+                searchResults.classList.remove('active');
+            }}
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {{
+                searchInput.value = '';
+            }}
             
             if (lat && lon) {{
                 map.setView([lat, lon], 12);
@@ -1287,13 +1419,16 @@ app_html = f"""
                         showCommunes(communesData);
                     }}
                     
-                    document.getElementById('breadcrumb').innerHTML = `
-                        <span class="bc-item" onclick="backToFrance()">🇫🇷 France</span>
-                        <span class="bc-sep">›</span>
-                        <span class="bc-item" onclick="selectDepartement('${{commune.dept}}', '${{commune.dept_nom}}')">${{commune.dept_nom}}</span>
-                        <span class="bc-sep">›</span>
-                        <span class="bc-current">${{commune.nom}}</span>
-                    `;
+                    const breadcrumb = document.getElementById('breadcrumb');
+                    if (breadcrumb) {{
+                        breadcrumb.innerHTML = `
+                            <span class="bc-item" onclick="backToFrance()">🇫🇷 France</span>
+                            <span class="bc-sep">›</span>
+                            <span class="bc-item" onclick="selectDepartement('${{commune.dept}}', '${{commune.dept_nom}}')">${{commune.dept_nom}}</span>
+                            <span class="bc-sep">›</span>
+                            <span class="bc-current">${{commune.nom}}</span>
+                        `;
+                    }}
                 }}
                 
                 showCommuneInfo(commune);
@@ -1303,7 +1438,10 @@ app_html = f"""
         // Hide search results when clicking outside
         document.addEventListener('click', e => {{
             if (!e.target.closest('.search-box')) {{
-                document.getElementById('searchResults').classList.remove('active');
+                const searchResults = document.getElementById('searchResults');
+                if (searchResults) {{
+                    searchResults.classList.remove('active');
+                }}
             }}
         }});
         
@@ -1357,6 +1495,7 @@ app_html = f"""
         
         function toggleStatus(statut) {{
             const chip = document.querySelector(`[data-status="${{statut}}"]`);
+            if (!chip) return;
             
             if (activeStatuts.includes(statut)) {{
                 activeStatuts = activeStatuts.filter(s => s !== statut);
@@ -1391,7 +1530,6 @@ app_html = f"""
                 {{ key: 'vert', label: 'Nouveau', bg: '#e8f5e9', color: '#2e7d32' }},
                 {{ key: 'orange', label: 'Ancien+ID', bg: '#fff3e0', color: '#e65100' }},
                 {{ key: 'rouge', label: 'Ancien', bg: '#ffebee', color: '#c62828' }},
-                {{ key: 'jaune', label: 'Assemblage', bg: '#fffde7', color: '#f9a825' }},
                 {{ key: 'gris', label: 'Vide', bg: '#f5f5f5', color: '#616161' }}
             ];
             
@@ -1434,12 +1572,16 @@ app_html = f"""
                 
                 const total = communesData.features.length;
                 
-                // Mettre à jour la liste des communes
-                const filtered = communesData.features
-                    .map(c => c.properties)
-                    .filter(c => activeStatuts.includes(c.statut || 'gris'));
+                // Mettre à jour la liste des communes (toutes, filtrage appliqué dans les fonctions)
+                const allCommunes = communesData.features.map(c => c.properties);
+                // NE PAS écraser si déjà rempli, garder toutes les communes
+                if (!window._currentDeptCommunes || window._currentDeptCommunes.length < allCommunes.length) {{
+                    window._currentDeptCommunes = allCommunes;
+                    window._currentDeptTotal = communesData.features.length;
+                }}
                 
-                window._currentDeptCommunes = filtered;
+                // Appliquer les filtres initiaux
+                const filtered = allCommunes.filter(c => activeStatuts.includes(c.statut || 'gris'));
                 updateCommunesList(filtered);
                 
                 // Mettre à jour le compteur
@@ -1460,14 +1602,19 @@ app_html = f"""
             const q = query.toLowerCase().trim();
             
             let filtered = communes;
+            
+            // Filtre statut
+            filtered = filtered.filter(c => activeStatuts.includes(c.statut || 'gris'));
+            
+            // Filtre recherche
             if (q.length > 0) {{
-                filtered = communes.filter(c => 
+                filtered = filtered.filter(c => 
                     c.nom.toLowerCase().includes(q) || 
                     c.code.toLowerCase().includes(q)
                 );
             }}
             
-            // Appliquer aussi le filtre producteur si actif
+            // Filtre producteur
             const prodSelect = document.getElementById('deptProducteurSelect');
             const prodValue = prodSelect ? prodSelect.value : '';
             if (prodValue) {{
@@ -1475,6 +1622,36 @@ app_html = f"""
             }}
             
             updateCommunesList(filtered);
+            
+            // Mettre à jour la carte : afficher seulement les communes qui matchent les filtres
+            if (communesLayer) {{
+                communesLayer.eachLayer(layer => {{
+                    const props = layer.feature.properties;
+                    const matchStatut = activeStatuts.includes(props.statut || 'gris');
+                    const matchSearch = !q || props.nom.toLowerCase().includes(q) || props.code.toLowerCase().includes(q);
+                    const matchProd = !prodValue || props.producteur === prodValue;
+                    
+                    if (matchStatut && matchSearch && matchProd) {{
+                        // Commune qui matche : visible normalement
+                        const statut = props.statut || 'gris';
+                        const style = {{
+                            fillColor: COLORS[statut] || COLORS.gris,
+                            color: '#fff',
+                            weight: 1,
+                            fillOpacity: 0.7,
+                            opacity: 1
+                        }};
+                        // Mettre à jour les options pour la restauration au mouseout
+                        Object.assign(layer.options, style);
+                        layer.setStyle(style);
+                    }} else {{
+                        // Commune qui ne matche pas : presque invisible
+                        const style = {{ fillOpacity: 0.05, opacity: 0.1 }};
+                        Object.assign(layer.options, style);
+                        layer.setStyle(style);
+                    }}
+                }});
+            }}
             
             // Mettre à jour le compteur
             const countEl = document.getElementById('communesCount');
@@ -1486,55 +1663,7 @@ app_html = f"""
             }}
         }}
         
-        // Filtre par producteur dans le département
-        function filterByProducteur(producteur, deptCode, deptNom) {{
-            const communes = window._currentDeptCommunes || [];
-            const total = window._currentDeptTotal || communes.length;
-            const searchInput = document.getElementById('deptSearchInput');
-            const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
-            
-            let filtered = communes;
-            
-            // Appliquer filtre producteur
-            if (producteur) {{
-                filtered = filtered.filter(c => c.producteur === producteur);
-            }}
-            
-            // Appliquer filtre recherche
-            if (query.length > 0) {{
-                filtered = filtered.filter(c => 
-                    c.nom.toLowerCase().includes(query) || 
-                    c.code.toLowerCase().includes(query)
-                );
-            }}
-            
-            updateCommunesList(filtered);
-            
-            // Mettre à jour le compteur
-            const countEl = document.getElementById('communesCount');
-            if (countEl) {{
-                const filteredCount = filtered.length;
-                countEl.textContent = filteredCount !== total 
-                    ? `📋 Communes (${{filteredCount}}/${{total}})` 
-                    : `📋 Communes (${{total}})`;
-            }}
-            
-            // Mettre à jour la carte aussi
-            if (communesLayer) {{
-                communesLayer.eachLayer(layer => {{
-                    const props = layer.feature.properties;
-                    const matchProd = !producteur || props.producteur === producteur;
-                    const matchSearch = !query || props.nom.toLowerCase().includes(query) || props.code.toLowerCase().includes(query);
-                    const matchStatus = activeStatuts.includes(props.statut || 'gris');
-                    
-                    if (matchProd && matchSearch && matchStatus) {{
-                        layer.setStyle({{ fillOpacity: 0.7 }});
-                    }} else {{
-                        layer.setStyle({{ fillOpacity: 0.1 }});
-                    }}
-                }});
-            }}
-        }}
+        // Cette fonction n'est plus utilisée, le filtrage se fait via filterDeptCommunes
         
         // Mettre à jour la liste des communes
         function updateCommunesList(communes) {{
@@ -1546,25 +1675,35 @@ app_html = f"""
                 return;
             }}
             
-            container.innerHTML = communes.map(c => `
+            container.innerHTML = communes.map(c => {{
+                const datePub = c.date_revision ? (typeof c.date_revision === 'string' ? c.date_revision.split('T')[0] : c.date_revision) : null;
+                return `
                 <div class="commune-item" onclick="goToCommune('${{c.code}}')" style="padding:10px 12px; border-bottom: 1px solid #f0f0f0;">
                     <span class="commune-dot" style="background:${{COLORS[c.statut] || COLORS.gris}}"></span>
                     <div style="flex:1;">
                         <div class="commune-name">${{c.nom}}</div>
-                        <div style="font-size:11px; color:#888;">${{c.code}}${{c.producteur ? ' • ' + c.producteur : ''}}</div>
+                        <div style="font-size:11px; color:#888;">
+                            ${{c.code}}${{c.producteur ? ' • ' + c.producteur : ''}}${{datePub ? ' • 📅 ' + datePub : ''}}
+                        </div>
                     </div>
                 </div>
-            `).join('');
+            `;
+            }}).join('');
         }}
         
         function resetFilters() {{
             selectedProducteur = null;
-            activeStatuts = ['vert', 'orange', 'rouge', 'jaune', 'gris'];
+            activeStatuts = ['vert', 'orange', 'rouge', 'gris'];
             
-            document.getElementById('producteurSelect').value = '';
+            const prodSelect = document.getElementById('producteurSelect');
+            if (prodSelect) {{
+                prodSelect.value = '';
+            }}
             document.querySelectorAll('.chip').forEach(c => {{
-                c.classList.add('active');
-                c.classList.remove('inactive');
+                if (c) {{
+                    c.classList.add('active');
+                    c.classList.remove('inactive');
+                }}
             }});
             
             // Reload stats
@@ -1573,6 +1712,7 @@ app_html = f"""
                 backToFrance();
             }});
         }}
+        
         
         // === INIT ===
         init();

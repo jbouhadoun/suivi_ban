@@ -13,11 +13,16 @@ ENV/
 .streamlit/
 
 # Data
-data/
+data/suivi_ban.db
+data/dump/suivi_ban/*.bson
+data/dump/suivi_ban/*.metadata.json
 cache/
 logs/
 *.db
 *.db-journal
+
+# Environment
+.env
 
 # IDE
 .vscode/
