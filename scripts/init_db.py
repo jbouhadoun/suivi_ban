@@ -40,35 +40,39 @@ def check_database_empty():
 
 def find_and_extract_dump():
     """Trouve et décompresse le dump si nécessaire"""
-    possible_paths = [
+    # Chemins où chercher le dump (lecture seule)
+    read_paths = [
         Path("/app/data/dump"),
         Path("data/dump"),
         Path("dump"),
         Path("/dump"),
     ]
     
+    # Chemin d'extraction (écriture possible avec readOnlyRootFilesystem)
+    extract_path = Path("/tmp/dump")
+    
     # Chercher d'abord un fichier tar.gz
-    for base_path in possible_paths:
+    for base_path in read_paths:
         archive_path = base_path / f"{MONGODB_DATABASE}_dump.tar.gz"
         if archive_path.exists():
             print(f"[INFO] Found compressed dump: {archive_path}")
-            dump_path = base_path / MONGODB_DATABASE
+            dump_path = extract_path / MONGODB_DATABASE
             
-            # Décompresser si le répertoire n'existe pas ou est vide
+            # Décompresser dans /tmp si le répertoire n'existe pas ou est vide
             if not dump_path.exists() or not (dump_path / "communes.bson").exists():
                 print(f"[INFO] Extracting dump to {dump_path}...")
                 dump_path.parent.mkdir(parents=True, exist_ok=True)
                 
                 with tarfile.open(archive_path, "r:gz") as tar:
-                    tar.extractall(path=base_path)
+                    tar.extractall(path=extract_path)
                 
                 print(f"[INFO] Dump extracted successfully")
             
             if dump_path.exists() and (dump_path / "communes.bson").exists():
                 return dump_path
     
-    # Chercher un répertoire de dump non compressé
-    for base_path in possible_paths:
+    # Chercher un répertoire de dump non compressé (dans les chemins en lecture)
+    for base_path in read_paths:
         dump_path = base_path / MONGODB_DATABASE
         if dump_path.exists() and (dump_path / "communes.bson").exists():
             return dump_path
