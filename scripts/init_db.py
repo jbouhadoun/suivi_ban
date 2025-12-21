@@ -20,14 +20,27 @@ from config import MONGODB_URI, MONGODB_DATABASE, COLLECTIONS
 
 
 def check_database_empty():
-    """Vérifie si la base de données est vide"""
+    """Vérifie si la base de données est vide ou incomplète"""
     try:
         client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
         db = client[MONGODB_DATABASE]
         communes = db[COLLECTIONS["communes"]]
         count = communes.count_documents({})
         client.close()
-        return count == 0
+        
+        # Vérifier si la base est vide
+        if count == 0:
+            return True
+        
+        # Vérifier si on a le bon nombre de communes (35011)
+        # Si le nombre est incorrect, on considère que la base est incomplète
+        EXPECTED_COMMUNES = 35011
+        if count != EXPECTED_COMMUNES:
+            print(f"[WARN] Database contains {count} communes, expected {EXPECTED_COMMUNES}")
+            print("[WARN] Database appears incomplete, will reinitialize...")
+            return True
+        
+        return False
     except ConnectionFailure as e:
         print(f"[ERROR] Cannot connect to MongoDB: {e}")
         print("[INFO] Make sure MongoDB is running:")
