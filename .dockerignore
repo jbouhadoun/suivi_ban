@@ -39,8 +39,7 @@ setup_cron.sh
 tests/
 *.test.py
 
-# Données non zippées (on utilise data.zip)
-data/
+# Cache (pas besoin dans l'image)
 cache/
 
 # Autres

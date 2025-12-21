@@ -51,7 +51,7 @@ gatherUsageStats = false\n\
 # Copier les scripts
 COPY --chown=appuser:appgroup scripts/ ./scripts/
 
-# Copier le dump MongoDB (doit exister pour le build)
+# Copier le dump MongoDB (inclus dans data/)
 COPY --chown=appuser:appgroup data/dump/ /app/data/dump/
 
 # Script de démarrage
