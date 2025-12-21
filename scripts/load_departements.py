@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 Script pour charger les départements dans MongoDB
-Peut être utilisé indépendamment de l'initialisation complète
+NOTE: En production, les départements sont chargés automatiquement depuis le dump.
+Ce script est un utilitaire pour développement/maintenance.
 
 Usage:
-    python scripts/load_departements.py          # Charge ou met à jour les départements
-    python scripts/load_departements.py --force # Force le rechargement
-    python scripts/load_departements.py --stats # Recalcule seulement les stats
+    python scripts/load_departements.py --stats # Recalcule seulement les stats (recommandé)
+    python scripts/load_departements.py --force # Force le rechargement depuis API/fichier (développement uniquement)
 """
 
 import sys

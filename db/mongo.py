@@ -212,7 +212,7 @@ def update_departements_stats():
             couleur_majoritaire = "gris"
             couleur_hex = "#808080"
         
-        # Mettre à jour le département avec les stats (format compatible avec departements_with_stats.geojson)
+        # Mettre à jour le département avec les stats
         departements.update_one(
             {"code": code},
             {
@@ -508,7 +508,7 @@ def get_departements_geojson():
         # Récupérer les stats si elles existent
         stats = doc.get("stats", {})
         
-        # Construire les properties au format attendu (comme departements_with_stats.geojson)
+        # Construire les properties au format GeoJSON avec les stats
         properties = {
             "code": doc.get("code"),
             "nom": doc.get("nom", f"Département {doc.get('code')}"),

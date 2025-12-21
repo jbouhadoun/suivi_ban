@@ -60,16 +60,10 @@ def api_departements_geojson():
             geojson = get_departements_geojson()
             _cache["departements"] = geojson
         except Exception as e:
-            # Fallback sur fichier si erreur
-            geojson_path = CACHE_DIR / "departements_with_stats.geojson"
-            if geojson_path.exists():
-                with open(geojson_path, 'r', encoding='utf-8') as f:
-                    _cache["departements"] = json.load(f)
-            else:
-                return JSONResponse(
-                    status_code=500,
-                    content={"error": f"Erreur récupération départements: {str(e)}"}
-                )
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Erreur récupération départements: {str(e)}"}
+            )
     
     return _cache["departements"]
 
