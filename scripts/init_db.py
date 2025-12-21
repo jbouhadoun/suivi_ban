@@ -64,7 +64,8 @@ def find_and_extract_dump():
                 dump_path.parent.mkdir(parents=True, exist_ok=True)
                 
                 with tarfile.open(archive_path, "r:gz") as tar:
-                    tar.extractall(path=extract_path)
+                    # filter='data' pour compatibilité Python 3.14+ (extraction sécurisée)
+                    tar.extractall(path=extract_path, filter='data')
                 
                 print(f"[INFO] Dump extracted successfully")
             

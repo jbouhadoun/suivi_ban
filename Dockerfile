@@ -61,17 +61,13 @@ echo "[INFO] Starting Suivi BAN application..."\n\
 \n\
 # Initialiser la base de données si nécessaire\n\
 echo "[INFO] Checking database initialization..."\n\
-python scripts/init_db.py || echo "[WARN] Database initialization skipped or failed"\n\
+python scripts/init_db.py || echo "[WARN] Database initialization failed (check logs above)"\n\
 \n\
 # Lancer l API en arrière-plan\n\
 echo "[INFO] Starting API on port 8000..."\n\
 python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 &\n\
-API_PID=$!\n\
 \n\
-# Attendre que l API soit prête\n\
-sleep 3\n\
-\n\
-# Lancer Streamlit\n\
+# Lancer Streamlit (en foreground, c est le processus principal)\n\
 echo "[INFO] Starting Streamlit on port 8501..."\n\
 exec python -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501\n\
 ' > /app/start.sh && chmod +x /app/start.sh && chown appuser:appgroup /app/start.sh
