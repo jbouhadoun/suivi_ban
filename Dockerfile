@@ -29,6 +29,7 @@ COPY --from=builder /build/deps /usr/local/lib/python3.12/site-packages/
 COPY --chown=appuser:appgroup config.py ./
 COPY --chown=appuser:appgroup db/ ./db/
 COPY --chown=appuser:appgroup backend/ ./backend/
+COPY --chown=appuser:appgroup collectors/ ./collectors/
 COPY --chown=appuser:appgroup app.py ./
 
 # Créer les répertoires nécessaires
