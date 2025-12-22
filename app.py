@@ -628,11 +628,11 @@ app_html = f"""
                 
                 <div class="filter-title" style="margin-top: 16px;">Statuts</div>
                 <div class="status-chips">
-                    <div class="chip chip-vert active" data-status="vert" onclick="toggleStatus('vert')" title="ID initiés et intégrés">
-                        <span class="chip-dot"></span> ID initiés et intégrés
+                    <div class="chip chip-vert active" data-status="vert" onclick="toggleStatus('vert')" title="ID fiabilisés">
+                        <span class="chip-dot"></span> ID fiabilisés
             </div>
-                    <div class="chip chip-orange active" data-status="orange" onclick="toggleStatus('orange')" title="ID initiés à intégrer">
-                        <span class="chip-dot"></span> ID initiés à intégrer
+                    <div class="chip chip-orange active" data-status="orange" onclick="toggleStatus('orange')" title="ID initiés à contrôler">
+                        <span class="chip-dot"></span> ID initiés à contrôler
             </div>
                     <div class="chip chip-rouge active" data-status="rouge" onclick="toggleStatus('rouge')" title="ID non initiés">
                         <span class="chip-dot"></span> ID non initiés
@@ -667,7 +667,7 @@ app_html = f"""
             <div class="info-bar" id="infoBar">
                 <div class="info-bar-content">
                     <div><strong>🔄 Actualisation quotidienne</strong> : Données mises à jour chaque jour à 2h du matin.</div>
-                    <div><strong>💡 Évolution des statuts</strong> : Les communes en orange passent progressivement au vert après validation.</div>
+                    <div><strong>💡 Évolution des statuts</strong> : Les communes passent progressivement de l'orange au vert après vérification de l'intégrité de leurs identifiants.</div>
                 </div>
                 <button class="info-bar-close" onclick="closeInfoBar()" title="Fermer">×</button>
             </div>
@@ -680,11 +680,11 @@ app_html = f"""
     <div class="legend">
         <div class="legend-item">
             <span class="legend-dot" style="background:#2e7d32"></span>
-            <span class="legend-label">ID initiés et intégrés</span>
+            <span class="legend-label">ID fiabilisés</span>
         </div>
         <div class="legend-item">
             <span class="legend-dot" style="background:#e65100"></span>
-            <span class="legend-label">ID initiés à intégrer</span>
+            <span class="legend-label">ID initiés à contrôler</span>
         </div>
         <div class="legend-item">
             <span class="legend-dot" style="background:#c62828"></span>
@@ -836,14 +836,14 @@ app_html = f"""
                             <span style="width:12px; height:12px; background:${{COLORS.vert}}; border-radius:50%;"></span>
                             <div>
                                 <div style="font-weight:700; color:#2e7d32;">${{filteredStats.vert.toLocaleString()}}</div>
-                                <div style="font-size:10px; color:#2e7d32;">ID initiés et intégrés</div>
+                                <div style="font-size:10px; color:#2e7d32;">ID fiabilisés</div>
                             </div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#fff3e0; border-radius:8px; opacity:${{activeStatuts.includes('orange') ? 1 : 0.4}};">
                             <span style="width:12px; height:12px; background:${{COLORS.orange}}; border-radius:50%;"></span>
                             <div>
                                 <div style="font-weight:700; color:#e65100;">${{filteredStats.orange.toLocaleString()}}</div>
-                                <div style="font-size:10px; color:#e65100;">ID initiés à intégrer</div>
+                                <div style="font-size:10px; color:#e65100;">ID initiés à contrôler</div>
                             </div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; padding:10px; background:#ffebee; border-radius:8px; opacity:${{activeStatuts.includes('rouge') ? 1 : 0.4}};">
@@ -1435,8 +1435,8 @@ app_html = f"""
         function showCommuneInfo(props) {{
             const statut = props.statut || 'gris';
             const statutLabels = {{
-                vert: 'ID initiés et intégrés',
-                orange: 'ID initiés à intégrer',
+                vert: 'ID fiabilisés',
+                orange: 'ID initiés à contrôler',
                 rouge: 'ID non initiés',
                 gris: 'Sans donnée'
             }};
@@ -1449,7 +1449,7 @@ app_html = f"""
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
                         <div>
                             <h2 style="font-size:18px; font-weight:700; margin:0;">🏘️ ${{props.nom}}</h2>
-                            <div style="font-size:13px; opacity:0.9; margin-top:4px;">${{props.code}} • ${{props.dept_nom || 'Département ' + (props.dept || '')}}</div>
+                            <div style="font-size:13px; opacity:0.9; margin-top:4px;">${{props.code}} • ${{props.dept_nom || 'Département ' + props.code.substring(0,2)}}</div>
                         </div>
                     </div>
                     <div style="display:inline-block; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600;">
@@ -1858,8 +1858,8 @@ app_html = f"""
             const nom = window._currentDeptNom || '';
             
             const filterData = [
-                {{ key: 'vert', label: 'ID initiés et intégrés', bg: '#e8f5e9', color: '#2e7d32' }},
-                {{ key: 'orange', label: 'ID initiés à intégrer', bg: '#fff3e0', color: '#e65100' }},
+                {{ key: 'vert', label: 'ID fiabilisés', bg: '#e8f5e9', color: '#2e7d32' }},
+                {{ key: 'orange', label: 'ID initiés à contrôler', bg: '#fff3e0', color: '#e65100' }},
                 {{ key: 'rouge', label: 'ID non initiés', bg: '#ffebee', color: '#c62828' }},
                 {{ key: 'gris', label: 'Sans donnée', bg: '#f5f5f5', color: '#616161' }}
             ];

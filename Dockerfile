@@ -54,6 +54,9 @@ COPY --chown=appuser:appgroup scripts/ ./scripts/
 # Copier le dump MongoDB (inclus dans data/)
 COPY --chown=appuser:appgroup data/dump/ /app/data/dump/
 
+# Copier le logo BAN
+COPY --chown=appuser:appgroup data/BAN.png /app/data/BAN.png
+
 # Script de démarrage
 RUN echo '#!/bin/sh\n\
 set -e\n\
