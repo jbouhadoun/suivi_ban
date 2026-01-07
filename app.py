@@ -559,6 +559,41 @@ app_html = f"""
         
         .zoom-indicator strong {{ color: #000091; font-size: 14px; }}
         
+        /* Territory selector */
+        .territory-selector {{
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            z-index: 1000;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            overflow: hidden;
+        }}
+        
+        .territory-selector select {{
+            border: none;
+            padding: 10px 40px 10px 15px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #1a1a1a;
+            background: white;
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+        }}
+        
+        .territory-selector select:hover {{
+            background-color: #f5f5f5;
+        }}
+        
+        .territory-selector select:focus {{
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(0,0,145,0.2);
+        }}
+        
         /* Leaflet overrides */
         .leaflet-control-zoom {{ 
             border: none !important;
@@ -701,6 +736,27 @@ app_html = f"""
         Zoom: <strong id="zoomLevel">6</strong>
     </div>
     
+    <!-- Territory selector -->
+    <div class="territory-selector">
+        <select id="territorySelector" onchange="navigateToTerritory(this.value)">
+            <option value="">Naviguer vers...</option>
+            <option value="france">France métropolitaine</option>
+            <optgroup label="DOM-TOM">
+                <option value="971">971 - Guadeloupe</option>
+                <option value="972">972 - Martinique</option>
+                <option value="973">973 - Guyane</option>
+                <option value="974">974 - La Réunion</option>
+                <option value="976">976 - Mayotte</option>
+                <option value="975">975 - Saint-Pierre-et-Miquelon</option>
+                <option value="977">977 - Saint-Barthélemy</option>
+                <option value="978">978 - Saint-Martin</option>
+                <option value="988">988 - Nouvelle-Calédonie</option>
+                <option value="987">987 - Polynésie française</option>
+                <option value="986">986 - Wallis-et-Futuna</option>
+            </optgroup>
+        </select>
+    </div>
+    
     <script>
         // === CONFIG ===
         const API = "{API_URL}";
@@ -755,6 +811,66 @@ app_html = f"""
         map.on('zoomend', () => {{
             document.getElementById('zoomLevel').textContent = map.getZoom();
         }});
+        
+        // === NAVIGATION ===
+        // Coordonnées des territoires français
+        const TERRITOIRES = {{
+            'france': {{ lat: 46.603354, lon: 1.888334, zoom: 6, nom: 'France métropolitaine' }},
+            '971': {{ lat: 16.265, lon: -61.551, zoom: 9, nom: 'Guadeloupe' }},
+            '972': {{ lat: 14.641, lon: -61.024, zoom: 10, nom: 'Martinique' }},
+            '973': {{ lat: 3.933, lon: -53.125, zoom: 7, nom: 'Guyane' }},
+            '974': {{ lat: -21.115, lon: 55.536, zoom: 10, nom: 'La Réunion' }},
+            '976': {{ lat: -12.827, lon: 45.166, zoom: 10, nom: 'Mayotte' }},
+            '975': {{ lat: 46.833, lon: -56.333, zoom: 7, nom: 'Saint-Pierre-et-Miquelon' }},
+            '977': {{ lat: 17.900, lon: -62.833, zoom: 11, nom: 'Saint-Barthélemy' }},
+            '978': {{ lat: 18.070, lon: -63.050, zoom: 11, nom: 'Saint-Martin' }},
+            '988': {{ lat: -22.276, lon: 166.457, zoom: 7, nom: 'Nouvelle-Calédonie' }},
+            '987': {{ lat: -17.679, lon: -149.406, zoom: 7, nom: 'Polynésie française' }},
+            '986': {{ lat: -13.293, lon: -176.199, zoom: 7, nom: 'Wallis-et-Futuna' }}
+        }};
+        
+        // Fonction de navigation vers un territoire
+        function navigateToTerritory(code) {{
+            // Réinitialiser le sélecteur
+            const selector = document.getElementById('territorySelector');
+            if (selector) {{
+                selector.value = '';
+            }}
+            
+            if (!code) return;
+            
+            if (code === 'france') {{
+                backToFrance();
+                return;
+            }}
+            
+            const territoire = TERRITOIRES[code];
+            if (!territoire) return;
+            
+            // Liste des codes DOM-TOM
+            const domTomCodes = ['971', '972', '973', '974', '976', '975', '977', '978', '988', '987', '986'];
+            
+            // Pour les DOM-TOM, zoomer d'abord puis charger les communes
+            if (domTomCodes.includes(code)) {{
+                // Zoomer sur le territoire
+                map.setView([territoire.lat, territoire.lon], territoire.zoom);
+                // Puis charger les communes
+                selectDepartement(code, territoire.nom || 'Département ' + code);
+                return;
+            }}
+            
+            // Pour les autres départements, vérifier s'ils existent dans departementsData
+            if (code.length === 3 && departementsData && departementsData.features) {{
+                const deptFeature = departementsData.features.find(f => f.properties.code === code);
+                if (deptFeature) {{
+                    selectDepartement(code, deptFeature.properties.nom);
+                    return;
+                }}
+            }}
+            
+            // Sinon, juste zoomer
+            map.setView([territoire.lat, territoire.lon], territoire.zoom);
+        }}
         
         // === API CALLS ===
         async function fetchAPI(endpoint) {{

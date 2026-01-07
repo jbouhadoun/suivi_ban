@@ -60,6 +60,8 @@ def init_indexes():
     revisions.create_index("code_commune")
     revisions.create_index("client_nom")
     revisions.create_index("published_at")
+    # Index partiel pour optimiser les requêtes sur is_current=True
+    revisions.create_index([("code_commune", ASCENDING), ("is_current", ASCENDING)])
     
     # Index voies
     voies = db[COLLECTIONS["voies"]]
@@ -89,6 +91,18 @@ def upsert_revision(data):
     """Insere ou met a jour une revision"""
     revisions = get_collection("revisions")
     data["updated_at"] = datetime.utcnow()
+    
+    # Si on insere/met a jour une revision avec is_current=True,
+    # mettre toutes les autres revisions de la meme commune a is_current=False
+    if data.get("is_current") is True and data.get("code_commune"):
+        revisions.update_many(
+            {
+                "code_commune": data["code_commune"],
+                "is_current": True,
+                "revision_id": {"$ne": data["revision_id"]}  # Exclure la revision actuelle
+            },
+            {"$set": {"is_current": False, "updated_at": datetime.utcnow()}}
+        )
     
     return revisions.update_one(
         {"revision_id": data["revision_id"]},
