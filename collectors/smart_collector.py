@@ -206,22 +206,6 @@ def collect_commune(code_insee, revision_data=None):
 def process_commune(code_commune, stored_date_revision=None):
     """Traite une commune et met a jour ses donnees si necessaire"""
     try:
-        # D'abord, recuperer les donnees BAN (plus rapide que revision)
-        ban_data = get_ban_lookup(code_commune)
-        
-        if not ban_data:
-            # Pas de donnees BAN, on peut skip si on a deja une date
-            if stored_date_revision:
-                return None, "Pas de changement (pas de donnees BAN)"
-            # Sinon on collecte quand meme pour avoir les infos de base
-        else:
-            # Comparer dateRevision avec celle stockee
-            api_date_revision = ban_data.get("dateRevision")
-            if stored_date_revision and api_date_revision == stored_date_revision:
-                # Pas de changement, on skip
-                return None, "Pas de changement"
-        
-        # Il y a un changement ou premiere collecte, on continue
         # Recuperer la revision courante
         revision_info = get_current_revision(code_commune)
         
@@ -290,7 +274,6 @@ def run_smart_collect():
     
     # Traiter en parallele
     updated = 0
-    skipped = 0
     errors = 0
     
     with ThreadPoolExecutor(max_workers=COLLECT_WORKERS) as executor:
@@ -303,16 +286,14 @@ def run_smart_collect():
             code, error = future.result()
             if code:
                 updated += 1
-            elif error and "Pas de changement" in error:
-                skipped += 1
             else:
                 errors += 1
-                if error and "Pas de changement" not in error:
+                if error:
                     logger.debug(error)
             
-            total_processed = updated + skipped + errors
+            total_processed = updated + errors
             if total_processed % 100 == 0:
-                logger.info(f"Progression: {total_processed}/{len(communes_to_check)} (mises a jour: {updated}, skip: {skipped}, erreurs: {errors})")
+                logger.info(f"Progression: {total_processed}/{len(communes_to_check)} (mises a jour: {updated}, erreurs: {errors})")
     
     # Mettre à jour les stats des départements
     logger.info("Mise à jour des statistiques des départements...")
@@ -329,7 +310,6 @@ def run_smart_collect():
     
     logger.info(f"Collecte terminee en {duration:.1f}s")
     logger.info(f"  - {updated} communes mises a jour")
-    logger.info(f"  - {skipped} communes sans changement")
     logger.info(f"  - {errors} erreurs")
     
     return errors == 0
