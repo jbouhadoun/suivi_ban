@@ -30,6 +30,7 @@ COPY --chown=appuser:appgroup config.py ./
 COPY --chown=appuser:appgroup db/ ./db/
 COPY --chown=appuser:appgroup backend/ ./backend/
 COPY --chown=appuser:appgroup collectors/ ./collectors/
+COPY --chown=appuser:appgroup pages/ ./pages/
 COPY --chown=appuser:appgroup app.py ./
 
 # Créer les répertoires nécessaires
