@@ -159,10 +159,13 @@ def get_stats_global():
     return result[0] if result else {}
 
 
-def get_stats_departements():
-    """Retourne les statistiques par departement"""
+def aggregate_stats_departements_from_communes():
+    """
+    Agrège les stats par département sur toute la collection communes.
+    Réservé au cron (update_departements_stats) — coûteux, ne pas appeler par requête HTTP.
+    """
     communes = get_collection("communes")
-    
+
     pipeline = [
         {
             "$group": {
@@ -173,12 +176,12 @@ def get_stats_departements():
                 "orange": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "orange"]}, 1, 0]}},
                 "rouge": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "rouge"]}, 1, 0]}},
                 "jaune": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "jaune"]}, 1, 0]}},
-                "gris": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "gris"]}, 1, 0]}}
+                "gris": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "gris"]}, 1, 0]}},
             }
         }
     ]
-    
-    results = {}
+
+    results: dict = {}
     for doc in communes.aggregate(pipeline):
         code = doc["_id"]
         if code:
@@ -192,16 +195,47 @@ def get_stats_departements():
                 "rouge": doc["rouge"],
                 "jaune": doc["jaune"],
                 "gris": doc["gris"],
-                "pct_vert": round(doc["vert"] / total * 100, 1)
+                "pct_vert": round(doc["vert"] / total * 100, 1),
             }
-    
+
+    return results
+
+
+def get_stats_departements():
+    """
+    Statistiques par département pour l'API / le front.
+    Lit les champs matérialisés ``departements.stats`` (alimentés par le cron), pas d'agrégation
+    sur toute la collection ``communes`` — aligné sur les tuiles PBF.
+    """
+    departements = get_collection("departements")
+    results: dict = {}
+    for doc in departements.find({}, {"code": 1, "nom": 1, "stats": 1}):
+        code = doc.get("code")
+        if not code:
+            continue
+        st = doc.get("stats") or {}
+        total = int(st.get("total", 0) or 0)
+        vert = int(st.get("vert", 0) or 0)
+        t = total or 1
+        results[code] = {
+            "code": code,
+            "nom": doc.get("nom", f"Département {code}"),
+            "total": total,
+            "vert": vert,
+            "orange": int(st.get("orange", 0) or 0),
+            "rouge": int(st.get("rouge", 0) or 0),
+            "jaune": int(st.get("jaune", 0) or 0),
+            "gris": int(st.get("gris", 0) or 0),
+            "pct_vert": round(vert / t * 100, 1) if st.get("pct_vert") is None else float(st["pct_vert"]),
+        }
+
     return results
 
 
 def update_departements_stats():
     """Met à jour les statistiques des départements dans la collection departements"""
     departements = get_collection("departements")
-    stats = get_stats_departements()
+    stats = aggregate_stats_departements_from_communes()
     
     updated = 0
     for code, stat_data in stats.items():
