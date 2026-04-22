@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import OrderedDict
 from typing import Any
 
 from fastapi import APIRouter, Path as FPath
@@ -24,6 +25,43 @@ from db.mongo import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Carte PBF"])
+
+# Cache PBF en RAM par pod (évite Mongo + encodage MVT sur les mêmes URLs).
+_PBF_LRU_MAX_BYTES = 200 * 1024 * 1024
+
+
+class _PbfLru:
+    __slots__ = ("_max", "_od", "_size", "_lock")
+
+    def __init__(self, max_bytes: int) -> None:
+        self._max = max_bytes
+        self._od: "OrderedDict[tuple, bytes]" = OrderedDict()
+        self._size = 0
+        self._lock = threading.Lock()
+
+    def get(self, key: tuple) -> bytes | None:
+        with self._lock:
+            if key not in self._od:
+                return None
+            val = self._od.pop(key)
+            self._od[key] = val
+            return val
+
+    def put(self, key: tuple, data: bytes) -> None:
+        n = len(data)
+        if n > self._max:
+            return
+        with self._lock:
+            if key in self._od:
+                self._size -= len(self._od.pop(key))
+            self._od[key] = data
+            self._size += n
+            while self._size > self._max and self._od:
+                _, v = self._od.popitem(last=False)
+                self._size -= len(v)
+
+
+_pbf_lru = _PbfLru(_PBF_LRU_MAX_BYTES)
 
 _CACHE_TTL = 6 * 3600
 _departements_index_cache: dict[str, Any] = {}
@@ -104,10 +142,19 @@ def tile_departements(
 ):
     if z > 14:
         return Response(content=b"", media_type="application/x-protobuf")
+    cache_key = ("dep", z, x, y)
+    hit = _pbf_lru.get(cache_key)
+    if hit is not None:
+        return Response(
+            content=hit,
+            media_type="application/x-protobuf",
+            headers={"Cache-Control": "public, max-age=300"},
+        )
     tile_bbox = lonlat_to_tile_bounds(z, x, y)
     index = _get_departements_index()
     matching = [_sanitize_feature(f) for f, b in index if bbox_intersects(b, tile_bbox)]
     pbf = _encode_pbf("departements", matching, tile_bbox)
+    _pbf_lru.put(cache_key, pbf)
     return Response(
         content=pbf,
         media_type="application/x-protobuf",
@@ -128,6 +175,14 @@ def tile_communes_departement(
 ):
     if z > 14:
         return Response(content=b"", media_type="application/x-protobuf")
+    cache_key = ("com", code, z, x, y)
+    hit = _pbf_lru.get(cache_key)
+    if hit is not None:
+        return Response(
+            content=hit,
+            media_type="application/x-protobuf",
+            headers={"Cache-Control": "public, max-age=300"},
+        )
     tile_bbox = lonlat_to_tile_bounds(z, x, y)
     fc = get_communes_geojson_in_bbox(code, *tile_bbox)
     matching = [
@@ -136,6 +191,7 @@ def tile_communes_departement(
         if isinstance(f, dict) and f.get("geometry")
     ]
     pbf = _encode_pbf("communes", matching, tile_bbox)
+    _pbf_lru.put(cache_key, pbf)
     return Response(
         content=pbf,
         media_type="application/x-protobuf",
