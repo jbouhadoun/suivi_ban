@@ -51,8 +51,21 @@ def init_indexes():
     communes.create_index("code_insee", unique=True)
     communes.create_index("departement_code")
     communes.create_index("statut_couleur")
-    # Index geospatial cree plus tard apres validation des geometries
-    # communes.create_index([("geometry", GEOSPHERE)])
+    # Tuiles MVT : filtre par bbox + département (sparse = ignore docs sans géométrie)
+    try:
+        communes.create_index(
+            [("departement_code", ASCENDING), ("geometry", GEOSPHERE)],
+            sparse=True,
+            name="dept_code_geometry_2dsphere",
+        )
+        communes.create_index(
+            [("departement_code", ASCENDING), ("geometry_raw", GEOSPHERE)],
+            sparse=True,
+            name="dept_code_geometry_raw_2dsphere",
+        )
+        logger.info("Index geospatial 2dsphere communes (geometry + geometry_raw)")
+    except Exception as e:
+        logger.warning("Creation index geospatial communes ignoree: %s", e)
     
     # Index revisions
     revisions = db[COLLECTIONS["revisions"]]
@@ -308,52 +321,129 @@ def get_departement_bounds_leaflet(code: str):
     return geometry_bounds_leaflet(dept.get("geometry"))
 
 
+def _doc_to_commune_feature(doc: dict) -> dict:
+    """Construit une Feature GeoJSON commune à partir d'un document (géométrie déjà résolue)."""
+    return {
+        "type": "Feature",
+        "properties": {
+            "code": doc.get("code_insee"),
+            "nom": doc.get("nom"),
+            "statut": doc.get("statut_couleur", "gris"),
+            "nb_numeros": doc.get("nb_numeros", 0),
+            "nb_voies": doc.get("nb_voies", 0),
+            "type_composition": doc.get("type_composition"),
+            "with_ban_id": doc.get("with_ban_id", False),
+            "producteur": doc.get("producteur"),
+            "lat": doc.get("centre_lat"),
+            "lon": doc.get("centre_lon"),
+        },
+        "geometry": doc.get("geometry"),
+    }
+
+
 def get_communes_by_departement(code_dept):
     """Retourne les communes d'un departement en GeoJSON"""
     communes = get_collection("communes")
-    
-    cursor = communes.find(
-        {"departement_code": code_dept},
+    pipeline = [
+        {"$match": {"departement_code": code_dept}},
         {
-            "code_insee": 1,
-            "nom": 1,
-            "statut_couleur": 1,
-            "geometry": 1,
-            "geometry_raw": 1,
-            "nb_numeros": 1,
-            "nb_voies": 1,
-            "type_composition": 1,
-            "with_ban_id": 1,
-            "producteur": 1,
-            "centre_lat": 1,
-            "centre_lon": 1
-        }
-    )
-    
-    features = []
-    for doc in cursor:
-        feature = {
-            "type": "Feature",
-            "properties": {
-                "code": doc.get("code_insee"),
-                "nom": doc.get("nom"),
-                "statut": doc.get("statut_couleur", "gris"),
-                "nb_numeros": doc.get("nb_numeros", 0),
-                "nb_voies": doc.get("nb_voies", 0),
-                "type_composition": doc.get("type_composition"),
-                "with_ban_id": doc.get("with_ban_id", False),
-                "producteur": doc.get("producteur"),
-                "lat": doc.get("centre_lat"),
-                "lon": doc.get("centre_lon")
-            },
-            "geometry": doc.get("geometry") or doc.get("geometry_raw")
-        }
-        features.append(feature)
-    
+            "$project": {
+                "_id": 0,
+                "code_insee": 1,
+                "nom": 1,
+                "statut_couleur": 1,
+                "nb_numeros": 1,
+                "nb_voies": 1,
+                "type_composition": 1,
+                "with_ban_id": 1,
+                "producteur": 1,
+                "centre_lat": 1,
+                "centre_lon": 1,
+                "geometry": {"$ifNull": ["$geometry", "$geometry_raw"]},
+            }
+        },
+    ]
+    features = [_doc_to_commune_feature(doc) for doc in communes.aggregate(pipeline)]
+    return {"type": "FeatureCollection", "features": features}
+
+
+def _bbox_polygon_geojson(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> dict:
     return {
-        "type": "FeatureCollection",
-        "features": features
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [min_lon, min_lat],
+                [max_lon, min_lat],
+                [max_lon, max_lat],
+                [min_lon, max_lat],
+                [min_lon, min_lat],
+            ]
+        ],
     }
+
+
+def get_communes_geojson_in_bbox(
+    code_dept: str,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+) -> dict:
+    """
+    Communes d'un département dont la géométrie intersecte la bbox (tuile XYZ).
+    Utilise $geoIntersects ; en cas d'échec (index manquant, géométrie invalide), repli sur scan dept.
+    """
+    from backend.api.tile_utils import bbox_intersects, feature_bbox
+
+    poly = _bbox_polygon_geojson(min_lon, min_lat, max_lon, max_lat)
+    geo_clause = {"$geoIntersects": {"$geometry": poly}}
+    communes = get_collection("communes")
+    match = {
+        "departement_code": code_dept,
+        "$or": [
+            {"geometry": geo_clause},
+            {"geometry_raw": geo_clause},
+        ],
+    }
+    projection = {
+        "code_insee": 1,
+        "nom": 1,
+        "statut_couleur": 1,
+        "geometry": 1,
+        "geometry_raw": 1,
+        "nb_numeros": 1,
+        "nb_voies": 1,
+        "type_composition": 1,
+        "with_ban_id": 1,
+        "producteur": 1,
+        "centre_lat": 1,
+        "centre_lon": 1,
+    }
+    tile_bbox = (min_lon, min_lat, max_lon, max_lat)
+    try:
+        cursor = communes.find(match, projection)
+        features = []
+        for doc in cursor:
+            geom = doc.get("geometry") or doc.get("geometry_raw")
+            if not geom:
+                continue
+            d = {**doc, "geometry": geom}
+            features.append(_doc_to_commune_feature(d))
+        return {"type": "FeatureCollection", "features": features}
+    except Exception as e:
+        logger.warning(
+            "get_communes_geojson_in_bbox geo query dept=%s: %s — fallback scan departement",
+            code_dept,
+            e,
+        )
+        fc = get_communes_by_departement(code_dept)
+        out = []
+        for f in fc.get("features", []):
+            if not isinstance(f, dict) or not f.get("geometry"):
+                continue
+            if bbox_intersects(feature_bbox(f), tile_bbox):
+                out.append(f)
+        return {"type": "FeatureCollection", "features": out}
 
 
 def get_producteurs():
@@ -568,7 +658,7 @@ def get_departements_geojson():
     departements = get_collection("departements")
     
     features = []
-    for doc in departements.find({}):
+    for doc in departements.find({}, {"code": 1, "nom": 1, "geometry": 1, "stats": 1}):
         if not doc.get("code"):
             continue
         

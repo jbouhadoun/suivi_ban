@@ -5,6 +5,7 @@ Tuiles vectorielles PBF (MVT) + métadonnées légères pour la carte Suivi BAN.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -14,7 +15,7 @@ from mapbox_vector_tile import encode as mvt_encode
 
 from backend.api.tile_utils import bbox_intersects, feature_bbox, lonlat_to_tile_bounds
 from db.mongo import (
-    get_communes_by_departement,
+    get_communes_geojson_in_bbox,
     get_communes_meta_by_departement,
     get_departement_bounds_leaflet,
     get_departements_geojson,
@@ -25,8 +26,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Carte PBF"])
 
 _CACHE_TTL = 6 * 3600
-_dept_index_cache: dict[str, dict] = {}
 _departements_index_cache: dict[str, Any] = {}
+_departements_index_lock = threading.Lock()
 
 
 def _now() -> float:
@@ -59,40 +60,30 @@ def _get_departements_index() -> list:
     entry = _departements_index_cache.get("idx")
     if entry and (_now() - entry["ts"]) < _CACHE_TTL:
         return entry["data"]
-    data = get_departements_geojson()
-    index = [
-        (_sanitize_feature(f), feature_bbox(f))
-        for f in data.get("features", [])
-        if isinstance(f, dict) and f.get("geometry")
-    ]
-    _departements_index_cache["idx"] = {"data": index, "ts": _now()}
-    logger.info("Index tuiles départements construit (%s polygones)", len(index))
-    return index
+    with _departements_index_lock:
+        entry = _departements_index_cache.get("idx")
+        if entry and (_now() - entry["ts"]) < _CACHE_TTL:
+            return entry["data"]
+        data = get_departements_geojson()
+        index = [
+            (_sanitize_feature(f), feature_bbox(f))
+            for f in data.get("features", [])
+            if isinstance(f, dict) and f.get("geometry")
+        ]
+        _departements_index_cache["idx"] = {"data": index, "ts": _now()}
+        logger.info("Index tuiles départements construit (%s polygones)", len(index))
+        return index
 
 
-def _get_communes_dept_index(code: str) -> list | None:
-    entry = _dept_index_cache.get(code)
-    if entry and (_now() - entry["ts"]) < _CACHE_TTL:
-        return entry["data"]
-    data = get_communes_by_departement(code)
-    if not data or not data.get("features"):
-        return None
-    index = [
-        (_sanitize_feature(f), feature_bbox(f))
-        for f in data["features"]
-        if isinstance(f, dict) and f.get("geometry")
-    ]
-    _dept_index_cache[code] = {"data": index, "ts": _now()}
-    logger.info("Index tuiles communes dept %s : %s features", code, len(index))
-    return index
-
-
-def _encode_pbf(layer_name: str, features: list, tile_bbox: tuple[float, float, float, float]) -> bytes:
-    if not features:
+def _encode_pbf(
+    layer_name: str,
+    sanitized_features: list[dict],
+    tile_bbox: tuple[float, float, float, float],
+) -> bytes:
+    if not sanitized_features:
         return b""
-    feats = [f for f, _ in features]
     return mvt_encode(
-        {"name": layer_name, "features": feats},
+        {"name": layer_name, "features": sanitized_features},
         default_options={
             "quantize_bounds": tile_bbox,
             "extents": 4096,
@@ -115,7 +106,7 @@ def tile_departements(
         return Response(content=b"", media_type="application/x-protobuf")
     tile_bbox = lonlat_to_tile_bounds(z, x, y)
     index = _get_departements_index()
-    matching = [(f, b) for f, b in index if bbox_intersects(b, tile_bbox)]
+    matching = [_sanitize_feature(f) for f, b in index if bbox_intersects(b, tile_bbox)]
     pbf = _encode_pbf("departements", matching, tile_bbox)
     return Response(
         content=pbf,
@@ -137,11 +128,13 @@ def tile_communes_departement(
 ):
     if z > 14:
         return Response(content=b"", media_type="application/x-protobuf")
-    index = _get_communes_dept_index(code)
-    if not index:
-        return Response(content=b"", media_type="application/x-protobuf")
     tile_bbox = lonlat_to_tile_bounds(z, x, y)
-    matching = [(f, b) for f, b in index if bbox_intersects(b, tile_bbox)]
+    fc = get_communes_geojson_in_bbox(code, *tile_bbox)
+    matching = [
+        _sanitize_feature(f)
+        for f in fc.get("features", [])
+        if isinstance(f, dict) and f.get("geometry")
+    ]
     pbf = _encode_pbf("communes", matching, tile_bbox)
     return Response(
         content=pbf,
