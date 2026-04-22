@@ -255,6 +255,59 @@ def update_departements_stats():
     return updated
 
 
+def get_communes_meta_by_departement(code_dept):
+    """
+    Liste légère des communes d'un département (sans géométrie) — pour UI / filtres.
+    """
+    communes = get_collection("communes")
+    cursor = communes.find(
+        {"departement_code": code_dept},
+        {
+            "code_insee": 1,
+            "nom": 1,
+            "statut_couleur": 1,
+            "nb_numeros": 1,
+            "nb_voies": 1,
+            "type_composition": 1,
+            "with_ban_id": 1,
+            "producteur": 1,
+            "centre_lat": 1,
+            "centre_lon": 1,
+            "population": 1,
+            "date_revision": 1,
+        },
+    )
+    out = []
+    for doc in cursor:
+        out.append(
+            {
+                "code": doc.get("code_insee"),
+                "nom": doc.get("nom"),
+                "statut": doc.get("statut_couleur", "gris"),
+                "nb_numeros": doc.get("nb_numeros", 0) or 0,
+                "nb_voies": doc.get("nb_voies", 0) or 0,
+                "type_composition": doc.get("type_composition") or "",
+                "with_ban_id": bool(doc.get("with_ban_id", False)),
+                "producteur": doc.get("producteur") or "",
+                "lat": doc.get("centre_lat"),
+                "lon": doc.get("centre_lon"),
+                "population": doc.get("population") or 0,
+                "date_revision": doc.get("date_revision"),
+            }
+        )
+    return out
+
+
+def get_departement_bounds_leaflet(code: str):
+    """BBox du département pour fitBounds Leaflet [[lat,lon],[lat,lon]] ou None."""
+    from backend.api.tile_utils import geometry_bounds_leaflet
+
+    dept = get_collection("departements").find_one({"code": code}, {"geometry": 1})
+    if not dept:
+        return None
+    return geometry_bounds_leaflet(dept.get("geometry"))
+
+
 def get_communes_by_departement(code_dept):
     """Retourne les communes d'un departement en GeoJSON"""
     communes = get_collection("communes")
