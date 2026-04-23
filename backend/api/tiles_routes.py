@@ -184,13 +184,37 @@ def tile_communes_departement(
             headers={"Cache-Control": "public, max-age=300"},
         )
     tile_bbox = lonlat_to_tile_bounds(z, x, y)
+    t0 = time.perf_counter()
     fc = get_communes_geojson_in_bbox(code, *tile_bbox)
+    dt = time.perf_counter() - t0
+    if dt > 1.0:
+        logger.warning(
+            "Tuile communes lente dept=%s z=%s x=%s y=%s : Mongo/geo %.2fs (%s features)",
+            code,
+            z,
+            x,
+            y,
+            dt,
+            len(fc.get("features") or []),
+        )
     matching = [
         _sanitize_feature(f)
         for f in fc.get("features", [])
         if isinstance(f, dict) and f.get("geometry")
     ]
+    t1 = time.perf_counter()
     pbf = _encode_pbf("communes", matching, tile_bbox)
+    enc = time.perf_counter() - t1
+    if dt + enc > 1.5:
+        logger.warning(
+            "Tuile communes lente dept=%s z=%s x=%s y=%s : encodage MVT %.2fs, pbf=%s o",
+            code,
+            z,
+            x,
+            y,
+            enc,
+            len(pbf),
+        )
     _pbf_lru.put(cache_key, pbf)
     return Response(
         content=pbf,

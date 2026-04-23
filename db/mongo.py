@@ -425,20 +425,16 @@ def get_communes_geojson_in_bbox(
 ) -> dict:
     """
     Communes d'un département dont la géométrie intersecte la bbox (tuile XYZ).
-    Utilise $geoIntersects ; en cas d'échec (index manquant, géométrie invalide), repli sur scan dept.
+    Deux requêtes distinctes (geometry puis geometry_raw) pour laisser Mongo utiliser
+    chaque index composé (dept + 2dsphere) — un seul find avec $or sur deux geo est souvent lent.
+
+    En cas d'échec (index manquant, etc.), repli sur scan complet du département.
     """
     from backend.api.tile_utils import bbox_intersects, feature_bbox
 
     poly = _bbox_polygon_geojson(min_lon, min_lat, max_lon, max_lat)
     geo_clause = {"$geoIntersects": {"$geometry": poly}}
     communes = get_collection("communes")
-    match = {
-        "departement_code": code_dept,
-        "$or": [
-            {"geometry": geo_clause},
-            {"geometry_raw": geo_clause},
-        ],
-    }
     projection = {
         "code_insee": 1,
         "nom": 1,
@@ -454,15 +450,38 @@ def get_communes_geojson_in_bbox(
         "centre_lon": 1,
     }
     tile_bbox = (min_lon, min_lat, max_lon, max_lat)
-    try:
-        cursor = communes.find(match, projection)
-        features = []
+
+    def _append_from_cursor(cursor, features: list, seen: set) -> None:
         for doc in cursor:
+            cid = doc.get("code_insee")
+            if cid in seen:
+                continue
             geom = doc.get("geometry") or doc.get("geometry_raw")
             if not geom:
                 continue
+            seen.add(cid)
             d = {**doc, "geometry": geom}
             features.append(_doc_to_commune_feature(d))
+
+    try:
+        features: list = []
+        seen: set = set()
+        _append_from_cursor(
+            communes.find(
+                {"departement_code": code_dept, "geometry": geo_clause},
+                projection,
+            ),
+            features,
+            seen,
+        )
+        _append_from_cursor(
+            communes.find(
+                {"departement_code": code_dept, "geometry_raw": geo_clause},
+                projection,
+            ),
+            features,
+            seen,
+        )
         return {"type": "FeatureCollection", "features": features}
     except Exception as e:
         logger.warning(
