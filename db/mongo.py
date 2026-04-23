@@ -271,6 +271,7 @@ def update_departements_stats():
             {"code": code},
             {
                 "$set": {
+                    "nom": stat_data.get("nom") or f"Département {code}",
                     "stats": {
                         "total": stat_data.get("total", 0),
                         "vert": vert,
@@ -288,6 +289,7 @@ def update_departements_stats():
                     "stats_updated_at": now,
                 }
             },
+            upsert=True,
         ))
 
     if not ops:
