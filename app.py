@@ -1345,6 +1345,9 @@ app_html = f"""
             const bounds = await fetchAPI(`/api/departement/${{code}}/bounds`);
             if (bounds && bounds.southwest && bounds.northeast) {{
                 map.fitBounds([bounds.southwest, bounds.northeast], {{ padding: [50, 50] }});
+            }} else if (TERRITOIRES[code]) {{
+                const t = TERRITOIRES[code];
+                map.setView([t.lat, t.lon], t.zoom);
             }}
             const metaRes = await fetchAPI(`/api/departement/${{code}}/communes-meta`);
             if (infoPanel) infoPanel.innerHTML = '';
@@ -1545,6 +1548,16 @@ app_html = f"""
             // selectedProducteur est déjà conservé globalement
             backToFrance();
         }}
+
+        function backToCommuneDepartement() {{
+            const deptCode = window._currentCommuneDeptCode || selectedDept || window._currentDeptCode || '';
+            if (!deptCode) return;
+            const deptNom =
+                window._currentCommuneDeptNom ||
+                window._currentDeptNom ||
+                ((departementsStats[deptCode] && departementsStats[deptCode].nom) ? departementsStats[deptCode].nom : ('Département ' + deptCode));
+            selectDepartement(deptCode, deptNom);
+        }}
         
         function showCommuneInfo(props) {{
             const statut = props.statut || 'gris';
@@ -1556,6 +1569,13 @@ app_html = f"""
             }};
             
             const sidebar = document.querySelector('.sidebar');
+            const deptCode = (props.dept || selectedDept || window._currentDeptCode || '').toString();
+            const deptNom =
+                props.dept_nom ||
+                window._currentDeptNom ||
+                ((deptCode && departementsStats[deptCode] && departementsStats[deptCode].nom) ? departementsStats[deptCode].nom : (deptCode ? ('Département ' + deptCode) : 'Département'));
+            window._currentCommuneDeptCode = deptCode;
+            window._currentCommuneDeptNom = deptNom;
             
             sidebar.innerHTML = `
                 <!-- Header commune -->
@@ -1563,7 +1583,7 @@ app_html = f"""
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
                         <div>
                             <h2 style="font-size:18px; font-weight:700; margin:0;">🏘️ ${{props.nom}}</h2>
-                            <div style="font-size:13px; opacity:0.9; margin-top:4px;">${{props.code}} • ${{props.dept_nom || ('Département ' + String(props.code || '').substring(0,2))}}</div>
+                            <div style="font-size:13px; opacity:0.9; margin-top:4px;">${{props.code}} • ${{deptNom}}</div>
                         </div>
                     </div>
                     <div style="display:inline-block; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600;">
@@ -1576,7 +1596,7 @@ app_html = f"""
                     <button onclick="restoreSidebar()" style="flex:1; background:white; color:#1a1a1a; border:none; padding:12px; font-weight:600; cursor:pointer; font-size:12px; border-right:1px solid #e0e0e0;">
                         🇫🇷 France
                     </button>
-                    <button onclick="selectDepartement('${{selectedDept || props.dept}}', '${{props.dept_nom || ''}}')" style="flex:1; background:#000091; color:white; border:none; padding:12px; font-weight:600; cursor:pointer; font-size:12px;">
+                    <button onclick="backToCommuneDepartement()" style="flex:1; background:#000091; color:white; border:none; padding:12px; font-weight:600; cursor:pointer; font-size:12px;">
                         ← Département
                     </button>
                 </div>

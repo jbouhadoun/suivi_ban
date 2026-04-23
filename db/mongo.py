@@ -2,7 +2,7 @@
 Gestion de la connexion MongoDB pour Suivi BAN
 """
 
-from pymongo import MongoClient, ASCENDING, GEOSPHERE
+from pymongo import MongoClient, ASCENDING, GEOSPHERE, UpdateOne
 from pymongo.errors import ConnectionFailure
 from datetime import datetime
 import logging
@@ -51,19 +51,19 @@ def init_indexes():
     communes.create_index("code_insee", unique=True)
     communes.create_index("departement_code")
     communes.create_index("statut_couleur")
-    # Tuiles MVT : filtre par bbox + département (sparse = ignore docs sans géométrie)
+    # Tuiles MVT : filtre par bbox + département.
+    # Les index 2dsphere sont nativement sparse (docs sans le champ exclus automatiquement).
+    # Ne pas mettre sparse=True : incompatible avec les index 2dsphere composés sur certaines versions.
     try:
         communes.create_index(
             [("departement_code", ASCENDING), ("geometry", GEOSPHERE)],
-            sparse=True,
             name="dept_code_geometry_2dsphere",
         )
         communes.create_index(
             [("departement_code", ASCENDING), ("geometry_raw", GEOSPHERE)],
-            sparse=True,
             name="dept_code_geometry_raw_2dsphere",
         )
-        logger.info("Index geospatial 2dsphere communes (geometry + geometry_raw)")
+        logger.info("Index geospatial 2dsphere communes crees (geometry + geometry_raw)")
     except Exception as e:
         logger.warning("Creation index geospatial communes ignoree: %s", e)
     
@@ -236,45 +236,38 @@ def update_departements_stats():
     """Met à jour les statistiques des départements dans la collection departements"""
     departements = get_collection("departements")
     stats = aggregate_stats_departements_from_communes()
-    
-    updated = 0
+
+    ops = []
+    now = datetime.utcnow()
     for code, stat_data in stats.items():
         if not code:
             continue
-        
+
         total = stat_data.get("total", 0) or 1
         vert = stat_data.get("vert", 0)
         orange = stat_data.get("orange", 0)
         rouge = stat_data.get("rouge", 0)
         jaune = stat_data.get("jaune", 0)
         gris = stat_data.get("gris", 0)
-        
-        # Calculer les pourcentages
-        pct_vert = round(vert / total * 100, 1) if total > 0 else 0
-        pct_orange = round(orange / total * 100, 1) if total > 0 else 0
-        pct_rouge = round(rouge / total * 100, 1) if total > 0 else 0
-        pct_jaune = round(jaune / total * 100, 1) if total > 0 else 0
-        
-        # Déterminer la couleur majoritaire
+
+        pct_vert = round(vert / total * 100, 1)
+        pct_orange = round(orange / total * 100, 1)
+        pct_rouge = round(rouge / total * 100, 1)
+        pct_jaune = round(jaune / total * 100, 1)
+
         max_count = max(orange, vert, rouge, jaune, gris)
         if orange == max_count:
-            couleur_majoritaire = "orange"
-            couleur_hex = "#ff8800"
+            couleur_majoritaire, couleur_hex = "orange", "#ff8800"
         elif vert == max_count:
-            couleur_majoritaire = "vert"
-            couleur_hex = "#00A86B"
+            couleur_majoritaire, couleur_hex = "vert", "#00A86B"
         elif rouge == max_count:
-            couleur_majoritaire = "rouge"
-            couleur_hex = "#DC143C"
+            couleur_majoritaire, couleur_hex = "rouge", "#DC143C"
         elif jaune == max_count:
-            couleur_majoritaire = "jaune"
-            couleur_hex = "#FFD700"
+            couleur_majoritaire, couleur_hex = "jaune", "#FFD700"
         else:
-            couleur_majoritaire = "gris"
-            couleur_hex = "#808080"
-        
-        # Mettre à jour le département avec les stats
-        departements.update_one(
+            couleur_majoritaire, couleur_hex = "gris", "#808080"
+
+        ops.append(UpdateOne(
             {"code": code},
             {
                 "$set": {
@@ -290,15 +283,20 @@ def update_departements_stats():
                         "pct_rouge": pct_rouge,
                         "pct_jaune": pct_jaune,
                         "couleur_majoritaire": couleur_majoritaire,
-                        "couleur_hex": couleur_hex
+                        "couleur_hex": couleur_hex,
                     },
-                    "stats_updated_at": datetime.utcnow()
+                    "stats_updated_at": now,
                 }
-            }
-        )
-        updated += 1
-    
-    logger.info(f"Stats mises à jour pour {updated} départements")
+            },
+        ))
+
+    if not ops:
+        logger.info("Aucun département à mettre à jour")
+        return 0
+
+    result = departements.bulk_write(ops, ordered=False)
+    updated = result.modified_count + result.upserted_count
+    logger.info(f"Stats mises à jour pour {updated} départements ({len(ops)} opérations)")
     return updated
 
 
@@ -425,22 +423,21 @@ def get_communes_geojson_in_bbox(
 ) -> dict:
     """
     Communes d'un département dont la géométrie intersecte la bbox (tuile XYZ).
-    Deux requêtes distinctes (geometry puis geometry_raw) pour laisser Mongo utiliser
-    chaque index composé (dept + 2dsphere) — un seul find avec $or sur deux geo est souvent lent.
 
-    En cas d'échec (index manquant, etc.), repli sur scan complet du département.
+    Deux requêtes séparées (geometry puis geometry_raw) pour que chacune exploite
+    son propre index 2dsphere — évite le plan OR_PLAN moins efficace d'un $or.
+    En cas d'échec (index manquant, géométrie invalide), repli sur scan département.
     """
     from backend.api.tile_utils import bbox_intersects, feature_bbox
 
     poly = _bbox_polygon_geojson(min_lon, min_lat, max_lon, max_lat)
     geo_clause = {"$geoIntersects": {"$geometry": poly}}
     communes = get_collection("communes")
-    projection = {
+
+    base_proj = {
         "code_insee": 1,
         "nom": 1,
         "statut_couleur": 1,
-        "geometry": 1,
-        "geometry_raw": 1,
         "nb_numeros": 1,
         "nb_voies": 1,
         "type_composition": 1,
@@ -450,38 +447,36 @@ def get_communes_geojson_in_bbox(
         "centre_lon": 1,
     }
     tile_bbox = (min_lon, min_lat, max_lon, max_lat)
-
-    def _append_from_cursor(cursor, features: list, seen: set) -> None:
-        for doc in cursor:
-            cid = doc.get("code_insee")
-            if cid in seen:
-                continue
-            geom = doc.get("geometry") or doc.get("geometry_raw")
-            if not geom:
-                continue
-            seen.add(cid)
-            d = {**doc, "geometry": geom}
-            features.append(_doc_to_commune_feature(d))
-
     try:
-        features: list = []
-        seen: set = set()
-        _append_from_cursor(
-            communes.find(
-                {"departement_code": code_dept, "geometry": geo_clause},
-                projection,
-            ),
-            features,
-            seen,
-        )
-        _append_from_cursor(
-            communes.find(
-                {"departement_code": code_dept, "geometry_raw": geo_clause},
-                projection,
-            ),
-            features,
-            seen,
-        )
+        seen: dict[str, dict] = {}
+
+        # Requête 1 : via geometry → index dept_code_geometry_2dsphere
+        for doc in communes.find(
+            {"departement_code": code_dept, "geometry": geo_clause},
+            {**base_proj, "geometry": 1},
+            hint="dept_code_geometry_2dsphere",
+        ):
+            code = doc.get("code_insee")
+            if code:
+                seen[code] = {**doc, "geometry": doc.get("geometry")}
+
+        # Requête 2 : via geometry_raw → index dept_code_geometry_raw_2dsphere
+        # On ne filtre pas sur la présence de geometry:
+        # certaines communes peuvent avoir geometry présent mais non exploitable,
+        # tandis que geometry_raw est valide. Le dict "seen" gère la déduplication.
+        for doc in communes.find(
+            {
+                "departement_code": code_dept,
+                "geometry_raw": geo_clause,
+            },
+            {**base_proj, "geometry_raw": 1},
+            hint="dept_code_geometry_raw_2dsphere",
+        ):
+            code = doc.get("code_insee")
+            if code and code not in seen:
+                seen[code] = {**doc, "geometry": doc.get("geometry_raw")}
+
+        features = [_doc_to_commune_feature(d) for d in seen.values() if d.get("geometry")]
         return {"type": "FeatureCollection", "features": features}
     except Exception as e:
         logger.warning(
@@ -490,12 +485,11 @@ def get_communes_geojson_in_bbox(
             e,
         )
         fc = get_communes_by_departement(code_dept)
-        out = []
-        for f in fc.get("features", []):
-            if not isinstance(f, dict) or not f.get("geometry"):
-                continue
-            if bbox_intersects(feature_bbox(f), tile_bbox):
-                out.append(f)
+        out = [
+            f
+            for f in fc.get("features", [])
+            if isinstance(f, dict) and f.get("geometry") and bbox_intersects(feature_bbox(f), tile_bbox)
+        ]
         return {"type": "FeatureCollection", "features": out}
 
 

@@ -3,7 +3,9 @@ API FastAPI pour Suivi BAN — stats JSON + tuiles vectorielles PBF pour la cart
 """
 
 import json
+import logging
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -19,13 +21,27 @@ from db.mongo import (
     get_producteurs,
     get_stats_departements,
     get_stats_global,
+    init_indexes,
     search_communes,
 )
 from backend.api.tiles_routes import router as tiles_router
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        init_indexes()
+    except Exception as e:
+        logger.warning("init_indexes au démarrage ignorée: %s", e)
+    yield
+
+
 app = FastAPI(
     title="Suivi BAN — API",
     version="2.0.0",
+    lifespan=lifespan,
     description="""
 **Statistiques et recherche** en JSON classique.
 
