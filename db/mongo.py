@@ -824,6 +824,43 @@ def replace_deploiement_bal_features(features: list[dict], source_stats: dict | 
     return inserted
 
 
+def replace_deploiement_bal_features_batched(
+    features_iterable,
+    source_stats: dict | None = None,
+    batch_size: int = 1000,
+) -> int:
+    """
+    Remplace le snapshot de déploiement BAL en insérant par lots.
+    Permet de limiter fortement le pic mémoire côté collecteur.
+    """
+    coll = get_collection("deploiement_bal_features")
+    meta = get_collection("deploiement_bal_meta")
+    coll.delete_many({})
+    inserted = 0
+    batch: list[dict] = []
+    for feature in features_iterable:
+        batch.append(feature)
+        if len(batch) >= batch_size:
+            res = coll.insert_many(batch, ordered=False)
+            inserted += len(res.inserted_ids)
+            batch.clear()
+    if batch:
+        res = coll.insert_many(batch, ordered=False)
+        inserted += len(res.inserted_ids)
+    meta.update_one(
+        {"_id": "latest"},
+        {
+            "$set": {
+                "updated_at": datetime.utcnow(),
+                "features_count": inserted,
+                "source_stats": source_stats or {},
+            }
+        },
+        upsert=True,
+    )
+    return inserted
+
+
 def get_deploiement_bal_stats(codes_commune: list[str] | None = None) -> dict:
     """Retourne la FeatureCollection déploiement BAL (optionnellement filtrée par codes INSEE)."""
     if not codes_commune:

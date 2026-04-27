@@ -8,12 +8,13 @@ et stocke le résultat dans la collection MongoDB `deploiement_bal_features`.
 from __future__ import annotations
 
 import logging
+import gc
 from datetime import datetime
 
 import requests
 
 from config import API_BAN_LOOKUP, API_BAL_DEPOT, API_BAL_STATS_BASE, API_TIMEOUT
-from db.mongo import get_collection, replace_deploiement_bal_features
+from db.mongo import get_collection, replace_deploiement_bal_features_batched
 
 logger = logging.getLogger(__name__)
 
@@ -163,95 +164,98 @@ def run_deploiement_bal_collect() -> bool:
             len(codes),
         )
         communes = get_collection("communes")
-
-        features: list[dict] = []
         total_codes = len(codes)
         processed = 0
+        built_features = 0
         missing_summary = 0
         missing_commune = 0
         missing_geometry = 0
-        for code in codes:
-            processed += 1
-            summary = summary_idx.get(code)
-            if not summary:
-                missing_summary += 1
-                continue
-            commune_doc = communes.find_one(
-                {"code_insee": code},
-                {"nom": 1, "geometry": 1, "geometry_raw": 1},
-            )
-            if not commune_doc:
-                missing_commune += 1
-                continue
+        def iter_features():
+            nonlocal processed, built_features, missing_summary, missing_commune, missing_geometry
+            for code in codes:
+                processed += 1
+                summary = summary_idx.get(code)
+                if not summary:
+                    missing_summary += 1
+                    continue
+                commune_doc = communes.find_one(
+                    {"code_insee": code},
+                    {"nom": 1, "geometry": 1, "geometry_raw": 1},
+                )
+                if not commune_doc:
+                    missing_commune += 1
+                    continue
 
-            geometry = commune_doc.get("geometry") or commune_doc.get("geometry_raw")
-            if not geometry:
-                missing_geometry += 1
-                continue
+                geometry = commune_doc.get("geometry") or commune_doc.get("geometry_raw")
+                if not geometry:
+                    missing_geometry += 1
+                    continue
 
-            has_bal = summary.get("typeComposition") == "bal"
-            revisions = rev_idx.get(code) or {}
-            status_bals = _compute_status_bals(bals_idx.get(code))
+                has_bal = summary.get("typeComposition") == "bal"
+                revisions = rev_idx.get(code) or {}
+                status_bals = _compute_status_bals(bals_idx.get(code))
 
-            properties = {
-                "nom": commune_doc.get("nom") or summary.get("nomCommune") or "",
-                "code": code,
-                "nbNumeros": _space_thousands(summary.get("nbNumeros")),
-                "hasBAL": bool(has_bal),
-                "certificationPercentage": _percentage(
-                    summary.get("nbNumerosCertifies"),
-                    summary.get("nbNumeros"),
-                ),
-                "statusBals": status_bals,
-            }
+                properties = {
+                    "nom": commune_doc.get("nom") or summary.get("nomCommune") or "",
+                    "code": code,
+                    "nbNumeros": _space_thousands(summary.get("nbNumeros")),
+                    "hasBAL": bool(has_bal),
+                    "certificationPercentage": _percentage(
+                        summary.get("nbNumerosCertifies"),
+                        summary.get("nbNumeros"),
+                    ),
+                    "statusBals": status_bals,
+                }
 
-            if has_bal and revisions:
-                client = revisions.get("client") or {}
-                # Parité avec l'API historique observée:
-                # idClient est souvent vide même avec nomClient renseigné.
-                properties["idClient"] = client.get("legacyId") or ""
-                properties["nomClient"] = client.get("nom") or ""
+                if has_bal and revisions:
+                    client = revisions.get("client") or {}
+                    # Parité avec l'API historique observée:
+                    # idClient est souvent vide même avec nomClient renseigné.
+                    properties["idClient"] = client.get("legacyId") or ""
+                    properties["nomClient"] = client.get("nom") or ""
 
-            features.append(
-                {
+                built_features += 1
+                if processed % 1000 == 0:
+                    logger.info(
+                        "[deploiement_bal] progress %s/%s features=%s missing_summary=%s missing_commune=%s missing_geometry=%s",
+                        processed,
+                        total_codes,
+                        built_features,
+                        missing_summary,
+                        missing_commune,
+                        missing_geometry,
+                    )
+                yield {
                     "type": "Feature",
                     "code_insee": code,
                     "properties": properties,
                     "geometry": geometry,
                     "collected_at": started_at,
                 }
-            )
-            if processed % 1000 == 0:
-                logger.info(
-                    "[deploiement_bal] progress %s/%s features=%s missing_summary=%s missing_commune=%s missing_geometry=%s",
-                    processed,
-                    total_codes,
-                    len(features),
-                    missing_summary,
-                    missing_commune,
-                    missing_geometry,
-                )
 
         logger.info(
             "[deploiement_bal] STEP 5/5 write snapshot: features=%s source={current_revisions=%s communes_summary=%s bals=%s}",
-            len(features),
+            "streaming",
             len(current_revisions),
             len(communes_summary),
             len(bals),
         )
-        inserted = replace_deploiement_bal_features(
-            features,
+        inserted = replace_deploiement_bal_features_batched(
+            iter_features(),
             source_stats={
                 "current_revisions": len(current_revisions),
                 "communes_summary": len(communes_summary),
                 "bals": len(bals),
-                "features": len(features),
             },
+            batch_size=1000,
         )
+        # Libère explicitement les structures intermédiaires volumineuses.
+        del rev_idx, summary_idx, bals_idx, current_revisions, communes_summary, bals, codes
+        gc.collect()
         logger.info(
             "[deploiement_bal] Collecte terminée: inserted=%s built=%s missing_summary=%s missing_commune=%s missing_geometry=%s",
             inserted,
-            len(features),
+            built_features,
             missing_summary,
             missing_commune,
             missing_geometry,
