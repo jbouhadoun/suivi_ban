@@ -33,13 +33,17 @@ COLLECTIONS = {
     "voies": "voies",
     "update_logs": "update_logs",
     "config": "config",
-    "departements": "departements"
+    "departements": "departements",
+    "deploiement_bal_features": "deploiement_bal_features",
+    "deploiement_bal_meta": "deploiement_bal_meta",
 }
 
 # APIs externes
 API_GEO = "https://geo.api.gouv.fr"
 API_BAN_LOOKUP = "https://plateforme.adresse.data.gouv.fr/lookup"
 API_BAL_DEPOT = "https://plateforme-bal.adresse.data.gouv.fr/api-depot"
+API_BAL_STATS_BASE = os.getenv("BAL_API_URL") or os.getenv("NEXT_PUBLIC_BAL_API_URL", "https://api-bal.adresse.data.gouv.fr/v2")
+BAL_TILES_MIN_ZOOM = int(os.getenv("BAL_TILES_MIN_ZOOM", "4"))
 
 # Collecte
 COLLECT_WINDOW_DAYS = int(os.getenv("COLLECT_WINDOW_DAYS", "7"))

@@ -84,6 +84,16 @@ def init_indexes():
     # Index departements
     departements = db[COLLECTIONS["departements"]]
     departements.create_index("code", unique=True)
+
+    # Index deploiement BAL
+    deploiement_bal = db[COLLECTIONS["deploiement_bal_features"]]
+    deploiement_bal.create_index("code_insee", unique=True)
+    deploiement_bal.create_index([("geometry", GEOSPHERE)], name="geometry_2dsphere")
+    deploiement_bal.create_index("properties.statusBals")
+    deploiement_bal.create_index(
+        [("properties.statusBals", ASCENDING), ("code_insee", ASCENDING)],
+        name="status_code_insee_1",
+    )
     
     logger.info("Index MongoDB crees")
 
@@ -786,4 +796,79 @@ def log_update(started_at, finished_at, communes_updated, errors, status, error_
         "status": status,
         "error_message": error_message
     })
+
+
+def replace_deploiement_bal_features(features: list[dict], source_stats: dict | None = None) -> int:
+    """
+    Remplace le snapshot de déploiement BAL.
+    Les index sont conservés (deleteMany + insert_many).
+    """
+    coll = get_collection("deploiement_bal_features")
+    meta = get_collection("deploiement_bal_meta")
+    coll.delete_many({})
+    inserted = 0
+    if features:
+        res = coll.insert_many(features, ordered=False)
+        inserted = len(res.inserted_ids)
+    meta.update_one(
+        {"_id": "latest"},
+        {
+            "$set": {
+                "updated_at": datetime.utcnow(),
+                "features_count": inserted,
+                "source_stats": source_stats or {},
+            }
+        },
+        upsert=True,
+    )
+    return inserted
+
+
+def get_deploiement_bal_stats(codes_commune: list[str] | None = None) -> dict:
+    """Retourne la FeatureCollection déploiement BAL (optionnellement filtrée par codes INSEE)."""
+    if not codes_commune:
+        return {"type": "FeatureCollection", "features": []}
+    coll = get_collection("deploiement_bal_features")
+    query = {}
+    query = {"code_insee": {"$in": codes_commune}}
+    cursor = coll.find(query, {"_id": 0, "type": 1, "properties": 1, "geometry": 1})
+    return {"type": "FeatureCollection", "features": list(cursor)}
+
+
+def _doc_to_deploiement_feature(doc: dict) -> dict:
+    return {
+        "type": "Feature",
+        "properties": doc.get("properties") or {},
+        "geometry": doc.get("geometry"),
+    }
+
+
+def get_deploiement_bal_geojson_in_bbox(
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+) -> dict:
+    """
+    Features déploiement BAL intersectant la bbox (tuile XYZ).
+    """
+    poly = _bbox_polygon_geojson(min_lon, min_lat, max_lon, max_lat)
+    coll = get_collection("deploiement_bal_features")
+    cursor = coll.find(
+        {
+            "geometry": {
+                "$geoIntersects": {"$geometry": poly}
+            }
+        },
+        {
+            "_id": 0,
+            "properties": 1,
+            "geometry": 1,
+        },
+    )
+    features = []
+    for doc in cursor:
+        if doc.get("geometry"):
+            features.append(_doc_to_deploiement_feature(doc))
+    return {"type": "FeatureCollection", "features": features}
 
