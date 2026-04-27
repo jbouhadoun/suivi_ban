@@ -4,7 +4,9 @@ API FastAPI pour Suivi BAN — stats JSON + tuiles vectorielles PBF pour la cart
 
 import json
 import logging
+import os
 import sys
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -29,12 +31,55 @@ from backend.api.tiles_routes import router as tiles_router
 logger = logging.getLogger(__name__)
 
 
+def _prewarm_bal_index() -> None:
+    """
+    Préchauffe en tâche de fond, sans bloquer le démarrage :
+      1. l'index BAL en mémoire (lecture Mongo + projection + simplification),
+      2. les tuiles PBF bas zoom couvrant la France (z=4 à 7) dans le cache LRU.
+    Activé par défaut pour éviter les tuiles bas-zoom lentes après reboot.
+    En développement, on peut le désactiver avec PREWARM_BAL_INDEX=0 pour
+    éviter de relancer un préchauffage long à chaque reload.
+    """
+    if os.getenv("PREWARM_BAL_INDEX", "1") not in ("1", "true", "TRUE", "yes"):
+        return
+    try:
+        from backend.api.tiles_routes import tile_deploiement_bal, _get_bal_index
+
+        logger.info("Préchauffage index BAL (background)")
+        _get_bal_index()
+        logger.info("Préchauffage index BAL terminé")
+
+        # Tuiles couvrant la France métropolitaine et l'outre-mer proche
+        # pour les zooms les plus coûteux à encoder dynamiquement.
+        # x/y XYZ approximés pour englober la France ; les tuiles vides
+        # sont encodées rapidement (réponse 0 octet, sans coût Python notable).
+        france_ranges = {
+            4: (range(7, 9), range(5, 6)),
+            5: (range(15, 18), range(10, 12)),
+            6: (range(30, 36), range(20, 24)),
+            7: (range(60, 72), range(40, 47)),
+        }
+        for z, (xs, ys) in france_ranges.items():
+            for x in xs:
+                for y in ys:
+                    try:
+                        tile_deploiement_bal(z=z, x=x, y=y)
+                    except Exception as e:
+                        logger.debug("Préchauffe tuile z=%s x=%s y=%s: %s", z, x, y, e)
+        logger.info("Préchauffage tuiles BAL bas zoom terminé")
+    except Exception as e:
+        logger.warning("Préchauffage BAL ignoré: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         init_indexes()
     except Exception as e:
         logger.warning("init_indexes au démarrage ignorée: %s", e)
+    threading.Thread(
+        target=_prewarm_bal_index, name="prewarm-bal-index", daemon=True
+    ).start()
     yield
 
 
