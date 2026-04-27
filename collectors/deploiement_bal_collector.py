@@ -125,9 +125,24 @@ def run_deploiement_bal_collect() -> bool:
     started_at = datetime.utcnow()
     logger.info("[deploiement_bal] Collecte démarrée")
     try:
+        logger.info("[deploiement_bal] STEP 1/5 fetch current-revisions")
         current_revisions = _fetch_json(f"{API_BAL_DEPOT}/current-revisions")
+        logger.info(
+            "[deploiement_bal] current_revisions=%s",
+            len(current_revisions) if isinstance(current_revisions, list) else "invalid",
+        )
+        logger.info("[deploiement_bal] STEP 2/5 fetch communes-summary")
         communes_summary = _fetch_json(API_COMMUNES_SUMMARY)
+        logger.info(
+            "[deploiement_bal] communes_summary=%s",
+            len(communes_summary) if isinstance(communes_summary, list) else "invalid",
+        )
+        logger.info("[deploiement_bal] STEP 3/5 fetch stats/bals")
         bals = _fetch_bals_stats()
+        logger.info(
+            "[deploiement_bal] bals=%s",
+            len(bals) if isinstance(bals, list) else "invalid",
+        )
 
         if not isinstance(current_revisions, list):
             current_revisions = []
@@ -140,22 +155,38 @@ def run_deploiement_bal_collect() -> bool:
 
         # Univers de communes: union(current-revisions, communes-summary)
         codes = set(rev_idx.keys()) | set(summary_idx.keys())
+        logger.info(
+            "[deploiement_bal] STEP 4/5 index done: rev_idx=%s summary_idx=%s bals_idx=%s codes=%s",
+            len(rev_idx),
+            len(summary_idx),
+            len(bals_idx),
+            len(codes),
+        )
         communes = get_collection("communes")
 
         features: list[dict] = []
+        total_codes = len(codes)
+        processed = 0
+        missing_summary = 0
+        missing_commune = 0
+        missing_geometry = 0
         for code in codes:
+            processed += 1
             summary = summary_idx.get(code)
             if not summary:
+                missing_summary += 1
                 continue
             commune_doc = communes.find_one(
                 {"code_insee": code},
                 {"nom": 1, "geometry": 1, "geometry_raw": 1},
             )
             if not commune_doc:
+                missing_commune += 1
                 continue
 
             geometry = commune_doc.get("geometry") or commune_doc.get("geometry_raw")
             if not geometry:
+                missing_geometry += 1
                 continue
 
             has_bal = summary.get("typeComposition") == "bal"
@@ -190,7 +221,24 @@ def run_deploiement_bal_collect() -> bool:
                     "collected_at": started_at,
                 }
             )
+            if processed % 1000 == 0:
+                logger.info(
+                    "[deploiement_bal] progress %s/%s features=%s missing_summary=%s missing_commune=%s missing_geometry=%s",
+                    processed,
+                    total_codes,
+                    len(features),
+                    missing_summary,
+                    missing_commune,
+                    missing_geometry,
+                )
 
+        logger.info(
+            "[deploiement_bal] STEP 5/5 write snapshot: features=%s source={current_revisions=%s communes_summary=%s bals=%s}",
+            len(features),
+            len(current_revisions),
+            len(communes_summary),
+            len(bals),
+        )
         inserted = replace_deploiement_bal_features(
             features,
             source_stats={
@@ -200,7 +248,14 @@ def run_deploiement_bal_collect() -> bool:
                 "features": len(features),
             },
         )
-        logger.info("[deploiement_bal] Collecte terminée: %s features", inserted)
+        logger.info(
+            "[deploiement_bal] Collecte terminée: inserted=%s built=%s missing_summary=%s missing_commune=%s missing_geometry=%s",
+            inserted,
+            len(features),
+            missing_summary,
+            missing_commune,
+            missing_geometry,
+        )
         return True
     except Exception as e:
         logger.exception("[deploiement_bal] Erreur collecte: %s", e)
