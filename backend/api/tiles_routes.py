@@ -18,6 +18,7 @@ from backend.api.tile_utils import (
     bbox_intersects,
     feature_bbox,
     lonlat_to_tile_bounds,
+    project_geometry_to_webmercator,
     project_and_simplify_geometry_tol,
     simplify_and_project_geometry,
     tile_bounds_webmercator,
@@ -114,6 +115,25 @@ def _sanitize_feature(f: dict) -> dict:
         "type": "Feature",
         "geometry": f.get("geometry"),
         "properties": _sanitize_props(dict(p)),
+    }
+
+
+def _sanitize_and_project_feature_webmercator(f: dict) -> dict | None:
+    """
+    Sanitize les propriétés et reprojette la géométrie en Web Mercator.
+    Utilisé pour toutes les tuiles MVT afin d'aligner l'encodage avec le
+    fond cartographique (Web Mercator) et éviter les décalages visuels.
+    """
+    geom = f.get("geometry")
+    if not geom:
+        return None
+    projected = project_geometry_to_webmercator(geom)
+    if not projected or not projected.get("coordinates"):
+        return None
+    return {
+        "type": "Feature",
+        "geometry": projected,
+        "properties": _sanitize_props(dict(f.get("properties") or {})),
     }
 
 
@@ -264,8 +284,14 @@ def tile_departements(
         )
     tile_bbox = lonlat_to_tile_bounds(z, x, y)
     index = _get_departements_index()
-    matching = [_sanitize_feature(f) for f, b in index if bbox_intersects(b, tile_bbox)]
-    pbf = _encode_pbf("departements", matching, tile_bbox)
+    matching_lonlat = [_sanitize_feature(f) for f, b in index if bbox_intersects(b, tile_bbox)]
+    matching: list[dict] = []
+    for f in matching_lonlat:
+        sf = _sanitize_and_project_feature_webmercator(f)
+        if sf is not None:
+            matching.append(sf)
+    merc_bbox = tile_bounds_webmercator(z, x, y)
+    pbf = _encode_pbf("departements", matching, merc_bbox)
     _pbf_lru.put(cache_key, pbf)
     return Response(
         content=pbf,
@@ -309,13 +335,16 @@ def tile_communes_departement(
             dt,
             len(fc.get("features") or []),
         )
-    matching = [
-        _sanitize_feature(f)
-        for f in fc.get("features", [])
-        if isinstance(f, dict) and f.get("geometry")
-    ]
+    matching: list[dict] = []
+    for f in fc.get("features", []):
+        if not isinstance(f, dict):
+            continue
+        sf = _sanitize_and_project_feature_webmercator(f)
+        if sf is not None:
+            matching.append(sf)
     t1 = time.perf_counter()
-    pbf = _encode_pbf("communes", matching, tile_bbox)
+    merc_bbox = tile_bounds_webmercator(z, x, y)
+    pbf = _encode_pbf("communes", matching, merc_bbox)
     enc = time.perf_counter() - t1
     if dt + enc > 1.5:
         logger.warning(
