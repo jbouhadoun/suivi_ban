@@ -30,6 +30,8 @@ from backend.api.tiles_routes import router as tiles_router
 
 logger = logging.getLogger(__name__)
 
+_API_CACHE_HEADERS = {"Cache-Control": "public, max-age=21600"}
+
 
 def _prewarm_bal_index() -> None:
     """
@@ -186,33 +188,45 @@ def api_stats_global():
     stats = get_stats_global()
 
     if not stats:
-        return {"total": 0, "vert": 0, "orange": 0, "rouge": 0, "jaune": 0, "gris": 0}
+        return JSONResponse(
+            content={"total": 0, "vert": 0, "orange": 0, "rouge": 0, "jaune": 0, "gris": 0},
+            headers=_API_CACHE_HEADERS,
+        )
 
     total = stats.get("total", 1) or 1
 
-    return {
-        "total": stats.get("total", 0),
-        "vert": stats.get("vert", 0),
-        "orange": stats.get("orange", 0),
-        "rouge": stats.get("rouge", 0),
-        "jaune": stats.get("jaune", 0),
-        "gris": stats.get("gris", 0),
-        "numeros": stats.get("numeros", 0),
-        "voies": stats.get("voies", 0),
-        "pct_vert": round(stats.get("vert", 0) / total * 100, 1),
-        "pct_orange": round(stats.get("orange", 0) / total * 100, 1),
-        "pct_rouge": round(stats.get("rouge", 0) / total * 100, 1),
-    }
+    return JSONResponse(
+        content={
+            "total": stats.get("total", 0),
+            "vert": stats.get("vert", 0),
+            "orange": stats.get("orange", 0),
+            "rouge": stats.get("rouge", 0),
+            "jaune": stats.get("jaune", 0),
+            "gris": stats.get("gris", 0),
+            "numeros": stats.get("numeros", 0),
+            "voies": stats.get("voies", 0),
+            "pct_vert": round(stats.get("vert", 0) / total * 100, 1),
+            "pct_orange": round(stats.get("orange", 0) / total * 100, 1),
+            "pct_rouge": round(stats.get("rouge", 0) / total * 100, 1),
+        },
+        headers=_API_CACHE_HEADERS,
+    )
 
 
 @app.get("/api/stats/departements")
 def api_stats_departements():
-    return get_stats_departements()
+    return JSONResponse(
+        content=get_stats_departements(),
+        headers=_API_CACHE_HEADERS,
+    )
 
 
 @app.get("/api/producteurs")
 def api_producteurs():
-    return get_producteurs()
+    return JSONResponse(
+        content=get_producteurs(),
+        headers=_API_CACHE_HEADERS,
+    )
 
 
 @app.get("/api/producteur/{nom}/departements")
@@ -256,7 +270,10 @@ def api_producteur_departements(nom: str):
                 "pct_vert": round(doc["vert"] / total * 100, 1),
             }
 
-    return results
+    return JSONResponse(
+        content=results,
+        headers=_API_CACHE_HEADERS,
+    )
 
 
 @app.get("/api/producteur/{nom}/stats")
@@ -277,12 +294,18 @@ def api_producteur_stats(nom: str):
 
     result = list(communes.aggregate(pipeline))
     if result:
-        return {
-            "total": result[0].get("total", 0),
-            "numeros": result[0].get("numeros", 0) or 0,
-            "voies": result[0].get("voies", 0) or 0,
-        }
-    return {"total": 0, "numeros": 0, "voies": 0}
+        return JSONResponse(
+            content={
+                "total": result[0].get("total", 0),
+                "numeros": result[0].get("numeros", 0) or 0,
+                "voies": result[0].get("voies", 0) or 0,
+            },
+            headers=_API_CACHE_HEADERS,
+        )
+    return JSONResponse(
+        content={"total": 0, "numeros": 0, "voies": 0},
+        headers=_API_CACHE_HEADERS,
+    )
 
 
 @app.get("/api/search")
