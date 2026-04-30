@@ -685,7 +685,7 @@ app_html = f"""
                 </div>
                 <div class="stat">
                     <div class="stat-value" id="statPctNumerosFiabilises" style="color:#2e7d32">-</div>
-                    <div class="stat-label" title="% Numéros fiabilisés">% Num. fiab.</div>
+                    <div class="stat-label">% Numéros fiabilisés</div>
                 </div>
     </div>
     
