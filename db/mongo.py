@@ -863,15 +863,34 @@ def log_update(started_at, finished_at, communes_updated, errors, status, error_
 def replace_deploiement_bal_features(features: list[dict], source_stats: dict | None = None) -> int:
     """
     Remplace le snapshot de déploiement BAL.
-    Les index sont conservés (deleteMany + insert_many).
+    Écriture atomique via collection temporaire + rename.
+    Évite la fenêtre où la collection cible serait vide.
     """
-    coll = get_collection("deploiement_bal_features")
+    db = get_db()
+    target_name = COLLECTIONS["deploiement_bal_features"]
+    temp_name = f"{target_name}__tmp"
+    tmp_coll = db[temp_name]
     meta = get_collection("deploiement_bal_meta")
-    coll.delete_many({})
+
+    # Repartir proprement en cas de reliquat d'une exécution précédente.
+    tmp_coll.drop()
     inserted = 0
     if features:
-        res = coll.insert_many(features, ordered=False)
+        res = tmp_coll.insert_many(features, ordered=False)
         inserted = len(res.inserted_ids)
+
+    # Recréer les index attendus côté collection temporaire avant le swap.
+    tmp_coll.create_index("code_insee", unique=True)
+    tmp_coll.create_index([("geometry", GEOSPHERE)], name="geometry_2dsphere")
+    tmp_coll.create_index("properties.statusBals")
+    tmp_coll.create_index(
+        [("properties.statusBals", ASCENDING), ("code_insee", ASCENDING)],
+        name="status_code_insee_1",
+    )
+
+    # Swap atomique: la collection cible est remplacée en une opération.
+    tmp_coll.rename(target_name, dropTarget=True)
+
     meta.update_one(
         {"_id": "latest"},
         {
@@ -894,21 +913,40 @@ def replace_deploiement_bal_features_batched(
     """
     Remplace le snapshot de déploiement BAL en insérant par lots.
     Permet de limiter fortement le pic mémoire côté collecteur.
+    Écriture atomique via collection temporaire + rename.
     """
-    coll = get_collection("deploiement_bal_features")
+    db = get_db()
+    target_name = COLLECTIONS["deploiement_bal_features"]
+    temp_name = f"{target_name}__tmp"
+    tmp_coll = db[temp_name]
     meta = get_collection("deploiement_bal_meta")
-    coll.delete_many({})
+
+    # Repartir proprement en cas de reliquat d'une exécution précédente.
+    tmp_coll.drop()
     inserted = 0
     batch: list[dict] = []
     for feature in features_iterable:
         batch.append(feature)
         if len(batch) >= batch_size:
-            res = coll.insert_many(batch, ordered=False)
+            res = tmp_coll.insert_many(batch, ordered=False)
             inserted += len(res.inserted_ids)
             batch.clear()
     if batch:
-        res = coll.insert_many(batch, ordered=False)
+        res = tmp_coll.insert_many(batch, ordered=False)
         inserted += len(res.inserted_ids)
+
+    # Recréer les index attendus côté collection temporaire avant le swap.
+    tmp_coll.create_index("code_insee", unique=True)
+    tmp_coll.create_index([("geometry", GEOSPHERE)], name="geometry_2dsphere")
+    tmp_coll.create_index("properties.statusBals")
+    tmp_coll.create_index(
+        [("properties.statusBals", ASCENDING), ("code_insee", ASCENDING)],
+        name="status_code_insee_1",
+    )
+
+    # Swap atomique: la collection cible est remplacée en une opération.
+    tmp_coll.rename(target_name, dropTarget=True)
+
     meta.update_one(
         {"_id": "latest"},
         {

@@ -17,6 +17,7 @@ from config import API_BAN_LOOKUP, API_BAL_DEPOT, API_BAL_STATS_BASE, API_TIMEOU
 from db.mongo import get_collection, replace_deploiement_bal_features_batched
 
 logger = logging.getLogger(__name__)
+_MONGO_FETCH_CHUNK_SIZE = 1000
 
 # API BAN search (communes-summary)
 API_BAN_BASE = API_BAN_LOOKUP.rsplit("/lookup", 1)[0]
@@ -122,6 +123,11 @@ def _build_indexes(current_revisions: list[dict], communes_summary: list[dict], 
     return rev_idx, summary_idx, bals_idx
 
 
+def _iter_chunks(items: list[str], chunk_size: int):
+    for i in range(0, len(items), chunk_size):
+        yield items[i : i + chunk_size]
+
+
 def run_deploiement_bal_collect() -> bool:
     started_at = datetime.utcnow()
     logger.info("[deploiement_bal] Collecte démarrée")
@@ -164,6 +170,7 @@ def run_deploiement_bal_collect() -> bool:
             len(codes),
         )
         communes = get_collection("communes")
+        code_list = list(codes)
         total_codes = len(codes)
         processed = 0
         built_features = 0
@@ -172,66 +179,73 @@ def run_deploiement_bal_collect() -> bool:
         missing_geometry = 0
         def iter_features():
             nonlocal processed, built_features, missing_summary, missing_commune, missing_geometry
-            for code in codes:
-                processed += 1
-                summary = summary_idx.get(code)
-                if not summary:
-                    missing_summary += 1
-                    continue
-                commune_doc = communes.find_one(
-                    {"code_insee": code},
-                    {"nom": 1, "geometry": 1, "geometry_raw": 1},
-                )
-                if not commune_doc:
-                    missing_commune += 1
-                    continue
-
-                geometry = commune_doc.get("geometry") or commune_doc.get("geometry_raw")
-                if not geometry:
-                    missing_geometry += 1
-                    continue
-
-                has_bal = summary.get("typeComposition") == "bal"
-                revisions = rev_idx.get(code) or {}
-                status_bals = _compute_status_bals(bals_idx.get(code))
-
-                properties = {
-                    "nom": commune_doc.get("nom") or summary.get("nomCommune") or "",
-                    "code": code,
-                    "nbNumeros": _space_thousands(summary.get("nbNumeros")),
-                    "hasBAL": bool(has_bal),
-                    "certificationPercentage": _percentage(
-                        summary.get("nbNumerosCertifies"),
-                        summary.get("nbNumeros"),
-                    ),
-                    "statusBals": status_bals,
-                }
-
-                if has_bal and revisions:
-                    client = revisions.get("client") or {}
-                    # Parité avec l'API historique observée:
-                    # idClient est souvent vide même avec nomClient renseigné.
-                    properties["idClient"] = client.get("legacyId") or ""
-                    properties["nomClient"] = client.get("nom") or ""
-
-                built_features += 1
-                if processed % 1000 == 0:
-                    logger.info(
-                        "[deploiement_bal] progress %s/%s features=%s missing_summary=%s missing_commune=%s missing_geometry=%s",
-                        processed,
-                        total_codes,
-                        built_features,
-                        missing_summary,
-                        missing_commune,
-                        missing_geometry,
+            for code_chunk in _iter_chunks(code_list, _MONGO_FETCH_CHUNK_SIZE):
+                commune_docs_by_code = {
+                    str(doc.get("code_insee")): doc
+                    for doc in communes.find(
+                        {"code_insee": {"$in": code_chunk}},
+                        {"code_insee": 1, "nom": 1, "geometry": 1, "geometry_raw": 1},
                     )
-                yield {
-                    "type": "Feature",
-                    "code_insee": code,
-                    "properties": properties,
-                    "geometry": geometry,
-                    "collected_at": started_at,
+                    if doc.get("code_insee")
                 }
+                for code in code_chunk:
+                    processed += 1
+                    summary = summary_idx.get(code)
+                    if not summary:
+                        missing_summary += 1
+                        continue
+                    commune_doc = commune_docs_by_code.get(code)
+                    if not commune_doc:
+                        missing_commune += 1
+                        continue
+
+                    geometry = commune_doc.get("geometry") or commune_doc.get("geometry_raw")
+                    if not geometry:
+                        missing_geometry += 1
+                        continue
+
+                    has_bal = summary.get("typeComposition") == "bal"
+                    revisions = rev_idx.get(code) or {}
+                    status_bals = _compute_status_bals(bals_idx.get(code))
+
+                    properties = {
+                        "nom": commune_doc.get("nom") or summary.get("nomCommune") or "",
+                        "code": code,
+                        "nbNumeros": _space_thousands(summary.get("nbNumeros")),
+                        "hasBAL": bool(has_bal),
+                        "certificationPercentage": _percentage(
+                            summary.get("nbNumerosCertifies"),
+                            summary.get("nbNumeros"),
+                        ),
+                        "statusBals": status_bals,
+                    }
+
+                    if has_bal and revisions:
+                        client = revisions.get("client") or {}
+                        # Parité avec l'API historique observée:
+                        # idClient est souvent vide même avec nomClient renseigné.
+                        properties["idClient"] = client.get("legacyId") or ""
+                        properties["nomClient"] = client.get("nom") or ""
+
+                    built_features += 1
+                    if processed % 1000 == 0:
+                        logger.info(
+                            "[deploiement_bal] progress %s/%s features=%s missing_summary=%s missing_commune=%s missing_geometry=%s",
+                            processed,
+                            total_codes,
+                            built_features,
+                            missing_summary,
+                            missing_commune,
+                            missing_geometry,
+                        )
+                    yield {
+                        "type": "Feature",
+                        "code_insee": code,
+                        "properties": properties,
+                        "geometry": geometry,
+                        "collected_at": started_at,
+                    }
+                del commune_docs_by_code
 
         logger.info(
             "[deploiement_bal] STEP 5/5 write snapshot: features=%s source={current_revisions=%s communes_summary=%s bals=%s}",
@@ -250,7 +264,7 @@ def run_deploiement_bal_collect() -> bool:
             batch_size=1000,
         )
         # Libère explicitement les structures intermédiaires volumineuses.
-        del rev_idx, summary_idx, bals_idx, current_revisions, communes_summary, bals, codes
+        del rev_idx, summary_idx, bals_idx, current_revisions, communes_summary, bals, codes, code_list
         gc.collect()
         logger.info(
             "[deploiement_bal] Collecte terminée: inserted=%s built=%s missing_summary=%s missing_commune=%s missing_geometry=%s",
