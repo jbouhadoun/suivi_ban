@@ -7,8 +7,10 @@ import logging
 import os
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -31,6 +33,8 @@ from backend.api.tiles_routes import router as tiles_router
 logger = logging.getLogger(__name__)
 
 _API_CACHE_HEADERS = {"Cache-Control": "public, max-age=21600"}
+_STATS_GLOBAL_CACHE_TTL_SECONDS = 21600
+_PRODUCTEURS_CACHE_TTL_SECONDS = 21600
 
 
 def _prewarm_bal_index() -> None:
@@ -73,6 +77,90 @@ def _prewarm_bal_index() -> None:
         logger.warning("Préchauffage BAL ignoré: %s", e)
 
 
+def _build_global_stats_response(stats: Optional[dict]) -> dict:
+    stats = stats or {}
+    total = stats.get("total", 0)
+    total_safe = total or 1
+    return {
+        "total": total,
+        "vert": stats.get("vert", 0),
+        "orange": stats.get("orange", 0),
+        "rouge": stats.get("rouge", 0),
+        "jaune": stats.get("jaune", 0),
+        "gris": stats.get("gris", 0),
+        "numeros": stats.get("numeros", 0),
+        "voies": stats.get("voies", 0),
+        "numeros_certifies": stats.get("numeros_certifies", 0),
+        "numeros_fiabilises": stats.get("numeros_fiabilises", 0),
+        "numeros_non_fiabilises": stats.get("numeros_non_fiabilises", 0),
+        "pct_vert": round(stats.get("vert", 0) / total_safe * 100, 1),
+        "pct_orange": round(stats.get("orange", 0) / total_safe * 100, 1),
+        "pct_rouge": round(stats.get("rouge", 0) / total_safe * 100, 1),
+        "pct_numeros_certifies": stats.get("pct_numeros_certifies", 0),
+        "pct_numeros_fiabilises": stats.get("pct_numeros_fiabilises", 0),
+    }
+
+
+def _refresh_stats_global_cache() -> None:
+    _cache["stats_global"] = {
+        "value": _build_global_stats_response(get_stats_global()),
+        "updated_at": time.time(),
+    }
+
+
+def _get_stats_global_cached() -> dict:
+    cached = _cache.get("stats_global")
+    now = time.time()
+    if cached and now - cached.get("updated_at", 0) < _STATS_GLOBAL_CACHE_TTL_SECONDS:
+        return cached.get("value", {})
+    try:
+        _refresh_stats_global_cache()
+    except Exception as e:
+        logger.warning("Refresh cache stats global impossible: %s", e)
+        if cached:
+            return cached.get("value", {})
+        return _build_global_stats_response(None)
+    return _cache.get("stats_global", {}).get("value", {})
+
+
+def _prewarm_stats_cache() -> None:
+    try:
+        _refresh_stats_global_cache()
+        logger.info("Préchauffage cache stats global terminé")
+    except Exception as e:
+        logger.warning("Préchauffage cache stats global ignoré: %s", e)
+
+
+def _refresh_producteurs_cache() -> None:
+    _cache["producteurs"] = {
+        "value": get_producteurs(),
+        "updated_at": time.time(),
+    }
+
+
+def _get_producteurs_cached() -> list:
+    cached = _cache.get("producteurs")
+    now = time.time()
+    if cached and now - cached.get("updated_at", 0) < _PRODUCTEURS_CACHE_TTL_SECONDS:
+        return cached.get("value", [])
+    try:
+        _refresh_producteurs_cache()
+    except Exception as e:
+        logger.warning("Refresh cache producteurs impossible: %s", e)
+        if cached:
+            return cached.get("value", [])
+        return []
+    return _cache.get("producteurs", {}).get("value", [])
+
+
+def _prewarm_producteurs_cache() -> None:
+    try:
+        _refresh_producteurs_cache()
+        logger.info("Préchauffage cache producteurs terminé")
+    except Exception as e:
+        logger.warning("Préchauffage cache producteurs ignoré: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -81,6 +169,12 @@ async def lifespan(app: FastAPI):
         logger.warning("init_indexes au démarrage ignorée: %s", e)
     threading.Thread(
         target=_prewarm_bal_index, name="prewarm-bal-index", daemon=True
+    ).start()
+    threading.Thread(
+        target=_prewarm_stats_cache, name="prewarm-stats-cache", daemon=True
+    ).start()
+    threading.Thread(
+        target=_prewarm_producteurs_cache, name="prewarm-producteurs-cache", daemon=True
     ).start()
     yield
 
@@ -185,30 +279,8 @@ def api_departements_geojson_legacy():
 
 @app.get("/api/stats/global")
 def api_stats_global():
-    stats = get_stats_global()
-
-    if not stats:
-        return JSONResponse(
-            content={"total": 0, "vert": 0, "orange": 0, "rouge": 0, "jaune": 0, "gris": 0},
-            headers=_API_CACHE_HEADERS,
-        )
-
-    total = stats.get("total", 1) or 1
-
     return JSONResponse(
-        content={
-            "total": stats.get("total", 0),
-            "vert": stats.get("vert", 0),
-            "orange": stats.get("orange", 0),
-            "rouge": stats.get("rouge", 0),
-            "jaune": stats.get("jaune", 0),
-            "gris": stats.get("gris", 0),
-            "numeros": stats.get("numeros", 0),
-            "voies": stats.get("voies", 0),
-            "pct_vert": round(stats.get("vert", 0) / total * 100, 1),
-            "pct_orange": round(stats.get("orange", 0) / total * 100, 1),
-            "pct_rouge": round(stats.get("rouge", 0) / total * 100, 1),
-        },
+        content=_get_stats_global_cached(),
         headers=_API_CACHE_HEADERS,
     )
 
@@ -224,7 +296,7 @@ def api_stats_departements():
 @app.get("/api/producteurs")
 def api_producteurs():
     return JSONResponse(
-        content=get_producteurs(),
+        content=_get_producteurs_cached(),
         headers=_API_CACHE_HEADERS,
     )
 

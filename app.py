@@ -206,16 +206,29 @@ app_html = f"""
         /* Stats */
         .stats-bar {{
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
-            padding: 16px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
+            padding: 12px 10px;
             background: #fafafa;
             border-bottom: 1px solid #e0e0e0;
         }}
         
-        .stat {{ text-align: center; }}
-        .stat-value {{ font-size: 20px; font-weight: 700; color: #1a1a1a; }}
-        .stat-label {{ font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .stat {{ text-align: center; min-width: 0; }}
+        .stat-value {{
+            font-size: clamp(12px, 1.25vw, 30px);
+            font-weight: 700;
+            color: #1a1a1a;
+            line-height: 1.05;
+            white-space: nowrap;
+        }}
+        .stat-label {{
+            font-size: 9px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            line-height: 1.15;
+            margin-top: 2px;
+        }}
         
         /* Search */
         .search-box {{
@@ -664,16 +677,16 @@ app_html = f"""
                 </div>
                 <div class="stat">
                     <div class="stat-value" id="statVert" style="color:#2e7d32">-</div>
-                    <div class="stat-label">% Vert</div>
+                    <div class="stat-label">% Communes fiabilisées</div>
                 </div>
                 <div class="stat">
                     <div class="stat-value" id="statNumeros">-</div>
                     <div class="stat-label">Numéros</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-value" id="statVoies">-</div>
-                    <div class="stat-label">Voies</div>
-        </div>
+                    <div class="stat-value" id="statPctNumerosFiabilises" style="color:#2e7d32">-</div>
+                    <div class="stat-label" title="% Numéros fiabilisés">% Num. fiab.</div>
+                </div>
     </div>
     
             <div class="search-box" style="position: relative;">
@@ -1012,6 +1025,14 @@ app_html = f"""
                         <span class="info-value">${{isFiltered ? filteredNumeros.toLocaleString() : (stats.numeros || 0).toLocaleString()}}</span>
                     </div>
                     <div class="info-row">
+                        <span class="info-label">Numéros fiabilisés</span>
+                        <span class="info-value">${{(stats.numeros_fiabilises || 0).toLocaleString()}} (${{(stats.pct_numeros_fiabilises || 0)}}%)</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Numéros certifiés</span>
+                        <span class="info-value">${{(stats.numeros_certifies || 0).toLocaleString()}} (${{(stats.pct_numeros_certifies || 0)}}%)</span>
+                    </div>
+                    <div class="info-row">
                         <span class="info-label">Voies</span>
                         <span class="info-value">${{isFiltered ? filteredVoies.toLocaleString() : (stats.voies || 0).toLocaleString()}}</span>
                     </div>
@@ -1046,7 +1067,7 @@ app_html = f"""
                 document.getElementById('statTotal').textContent = stats.total.toLocaleString();
                 document.getElementById('statVert').textContent = stats.pct_vert + '%';
                 document.getElementById('statNumeros').textContent = (stats.numeros || 0).toLocaleString();
-                document.getElementById('statVoies').textContent = (stats.voies || 0).toLocaleString();
+                document.getElementById('statPctNumerosFiabilises').textContent = (stats.pct_numeros_fiabilises || 0) + '%';
             }}
             
             // Load departements stats

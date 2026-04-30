@@ -159,8 +159,70 @@ def get_stats_global():
                 "rouge": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "rouge"]}, 1, 0]}},
                 "jaune": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "jaune"]}, 1, 0]}},
                 "gris": {"$sum": {"$cond": [{"$eq": ["$statut_couleur", "gris"]}, 1, 0]}},
-                "numeros": {"$sum": "$nb_numeros"},
-                "voies": {"$sum": "$nb_voies"}
+                "numeros": {"$sum": {"$ifNull": ["$nb_numeros", 0]}},
+                "voies": {"$sum": {"$ifNull": ["$nb_voies", 0]}},
+                "numeros_certifies": {"$sum": {"$ifNull": ["$nb_numeros_certifies", 0]}},
+                "numeros_fiabilises": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$statut_couleur", "vert"]},
+                            {"$ifNull": ["$nb_numeros", 0]},
+                            0,
+                        ]
+                    }
+                },
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "total": 1,
+                "vert": 1,
+                "orange": 1,
+                "rouge": 1,
+                "jaune": 1,
+                "gris": 1,
+                "numeros": 1,
+                "voies": 1,
+                "numeros_certifies": 1,
+                "numeros_fiabilises": 1,
+                "numeros_non_fiabilises": {
+                    "$max": [{"$subtract": ["$numeros", "$numeros_fiabilises"]}, 0]
+                },
+                "pct_numeros_certifies": {
+                    "$cond": [
+                        {"$gt": ["$numeros", 0]},
+                        {
+                            "$round": [
+                                {
+                                    "$multiply": [
+                                        {"$divide": ["$numeros_certifies", "$numeros"]},
+                                        100,
+                                    ]
+                                },
+                                1,
+                            ]
+                        },
+                        0,
+                    ]
+                },
+                "pct_numeros_fiabilises": {
+                    "$cond": [
+                        {"$gt": ["$numeros", 0]},
+                        {
+                            "$round": [
+                                {
+                                    "$multiply": [
+                                        {"$divide": ["$numeros_fiabilises", "$numeros"]},
+                                        100,
+                                    ]
+                                },
+                                1,
+                            ]
+                        },
+                        0,
+                    ]
+                },
             }
         }
     ]
